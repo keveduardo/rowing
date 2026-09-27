@@ -87,21 +87,32 @@ like an obstacle and is actually the correct decomposition:
 |---|---|
 | `HubCore/PM5.swift` | The byte layouts and the enums |
 | `HubCore/WorkoutStore.swift` | One row, accumulated from the notification stream |
+| `HubCore/RowingHistory.swift` | Past rows, and the sums a screen shows over them |
 | `Hub/PM5Radio.swift` | The `CBCentralManager` |
-| `Hub/HealthWriter.swift` | Saves a finished row to Health |
+| `Hub/HealthStore.swift` | Writes finished rows to Health and reads past ones back |
 | `Hub/WorkoutScreen.swift` | The Workouts tile and the screen behind it |
-| `Tests/HubCoreTests/` | 35 tests across the parser and the store |
+| `Tests/HubCoreTests/` | 42 tests across the parser, the store and the history |
 
-`swift test --package-path Apps/Hub` — 56 tests, all passing.
+`swift test --package-path Apps/Hub` — 63 tests, all passing.
 `xtool dev build` in `Apps/Hub` — clean, no warnings.
 
-**Two `Info.plist` keys are now load-bearing**, and both are the kind that fail
-by terminating rather than by erroring: `NSBluetoothAlwaysUsageDescription`
-(a missing one kills the app the moment a `CBCentralManager` is made) and
-`NSHealthUpdateUsageDescription` (a missing one raises inside
-`requestAuthorization`, and an Objective-C exception is not something `try` can
-catch). Writing only needs the update string; `NSHealthShareUsageDescription`
-becomes necessary when the Hub starts reading workouts back.
+**Three `Info.plist` keys are now load-bearing**, and all three fail by
+terminating rather than by erroring: `NSBluetoothAlwaysUsageDescription`
+(a missing one kills the app the moment a `CBCentralManager` is made),
+`NSHealthUpdateUsageDescription` and `NSHealthShareUsageDescription` (a missing
+one raises inside `requestAuthorization`, and an Objective-C exception is not
+something `try` can catch). The health pair covers the two halves — Update for
+writing a workout, Share for reading workouts back.
+
+**What the Hub deliberately does not ask for.** Read access to *heart rate* is
+not requested, even though a history with heart rate in it would be nicer. The
+Hub already holds the average and peak when it saves a row, so it records them
+in its own metadata and reads them back from there — asking Health for the same
+numbers again would mean a second, far more alarming permission prompt for data
+the app already had. The cost is worth stating: heart rate appears on rows the
+Hub wrote and not on rows ErgData wrote, because those carry no such metadata.
+The list names the source on any row that is not the Hub's own, so a mixed
+history says so rather than silently disagreeing with itself.
 
 **One thing still needs a person, not a commit:** the HealthKit capability has
 to be ticked on the `com.brisaloca.hub` app record before any of this can save
