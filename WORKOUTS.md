@@ -85,16 +85,24 @@ like an obstacle and is actually the correct decomposition:
 
 | File | What |
 |---|---|
-| `HubCore/PM5.swift` | The byte layouts and the enums |
-| `HubCore/WorkoutStore.swift` | One row, accumulated from the notification stream |
-| `HubCore/RowingHistory.swift` | Past rows, and the sums a screen shows over them |
+| `RowingKit/PM5.swift` | The byte layouts and the enums |
+| `RowingKit/WorkoutStore.swift` | One row, accumulated from the notification stream |
+| `RowingKit/RowingHistory.swift` | Past rows, and the sums a screen shows over them |
+| `RowingKit/MirrorMessage.swift` | The watch-to-phone wire format (§4) |
 | `Hub/PM5Radio.swift` | The `CBCentralManager` |
 | `Hub/HealthStore.swift` | Writes finished rows to Health and reads past ones back |
 | `Hub/WorkoutScreen.swift` | The Workouts tile and the screen behind it |
-| `Tests/HubCoreTests/` | 42 tests across the parser, the store and the history |
 
-`swift test --package-path Apps/Hub` — 63 tests, all passing.
-`xtool dev build` in `Apps/Hub` — clean, no warnings.
+```bash
+swift test --package-path RowingKit   # 47 tests — the module a watch app shares
+swift test --package-path Apps/Hub    # 21 tests — the estate's own stores
+xtool dev build                       # in Apps/Hub — clean, no warnings
+```
+
+`RowingKit` is its own package rather than a second target inside `Apps/Hub`,
+for both reasons in §4: xtool refuses a package with two library products, and a
+watch target should not carry the estate's API surface. It has no dependencies
+at all, which is what makes it shareable.
 
 **Three `Info.plist` keys are now load-bearing**, and all three fail by
 terminating rather than by erroring: `NSBluetoothAlwaysUsageDescription`
@@ -380,19 +388,48 @@ The maintainer's only public statement on watchOS is in the 1.20.0 release notes
 framing it as hypothetical: *"if a future update of xtool added watchOS
 support…"*. All 282 issues and PRs were searched — none mention it.
 
-**So the injection idea is closed.** `resources:` does copy to the app bundle
-root, so a directory named `Watch` could physically be placed there — but on the
-evidence above it would be provisioned and signed wrongly and would not survive
-App Store validation. That leaves:
+**The injection idea was closed for the wrong reason. It is open again.** An
+earlier pass concluded that a watch app could not be injected into the
+xtool-built ipa, on evidence about *xtool's* signer — its hardcoded `.appex`
+placement and its [#131](https://github.com/xtool-org/xtool/issues/131)
+inability to carry per-bundle entitlements. Both findings are sound. Both are
+beside the point, because **xtool does not sign this app.**
 
-1. **Move the Hub to a Mac-built, Xcode-project pipeline.** The realistic path.
-   Correct and boring, and it costs the Hub its Linux build — including its share
-   of the weekly TestFlight rebuild that currently runs unattended. This is the
-   real price of Phase 2, and it is a price on the *whole Hub*, not on rowing.
-2. **Contribute watchOS support to xtool.** Items 1 and 3 above are the two the
-   maintainer has never started; it is the kind of gap worth asking him about
-   directly, since the 1.20.0 note shows he has thought about it. Not a plan, an
-   option.
+`rebuild.mjs:341` calls `buildIpa(app, { sign: false })` — xtool produces an
+*unsigned* ipa — and `:345` hands it to `distsign.mjs`, which signs with
+`rcodesign` using the entitlements read out of the profile (`distsign.mjs:264`).
+The signer is ours, it is a script on this box, and per-bundle entitlements are
+within its reach. The `resources:` route into `xtool.yml` was always the wrong
+lever; the right one was never xtool at all.
+
+So the realistic options, corrected:
+
+1. **Build the watch app on macOS CI, inject and sign it here.** The Hub keeps
+   its Linux build, the rowing module keeps being tested here, and the watch
+   app is the only thing that needs a Mac — once, per change to it, rather than
+   on every Hub build. What it needs, all of it bounded:
+   - `HubWatch.app` built by Xcode on a macOS runner, plus its own profile.
+   - The watch bundle id registered under the **watchOS** platform — an ASC API
+     call, and `ensureProfile` is already parameterised by bundle id.
+   - `ensureProfile` extended for a watchOS profile; `signIpa` extended to sign
+     the nested bundle inside-out with its own entitlements, then the outer app.
+   - Nesting at `Payload/Hub.app/Watch/HubWatch.app`, with
+     `WKCompanionAppBundleIdentifier` pointing home.
+   Items 2–4 are perhaps a hundred lines in `distsign.mjs`, none of it
+   speculative in kind — the file already unpacks, patches, signs and repacks an
+   ipa. What is genuinely unknown is the last one: whether Apple's validation
+   accepts a hand-assembled Watch bundle. That cannot be settled on this box.
+2. **Move the Hub to a Mac-built, Xcode-project pipeline.** Correct and boring,
+   and it costs the Hub its Linux build — including its share of the weekly
+   TestFlight rebuild that currently runs unattended. A price on the *whole
+   Hub*, not on rowing, and option 1 is now the one that avoids it.
+3. **Contribute watchOS support to xtool.** Items 1 and 3 above are the two the
+   maintainer has never started; worth asking him about directly, since the
+   1.20.0 note shows he has thought about it. Not a plan, an option.
+
+**Recommendation: option 1**, and the reason to prefer it is not that it is
+cheaper but that it is *reversible*. If Apple rejects the hand-assembled bundle,
+the fallback is option 2 and nothing is lost but the attempt.
 
 One genuinely surprising finding, recorded as **unverified**: the default xtool
 SDK install keeps all of Xcode.app, so `WatchOS27.0.sdk` is already on this disk,
@@ -401,6 +438,40 @@ the toolchain ships `arm64_32-apple-watchos` Swift interfaces, and both
 platform is unpatched and unwired, and the one naive compile attempt failed on
 `SwiftShims`. "Possible with significant hand-rolling" is a hypothesis, not a
 finding — do not budget on it.
+
+### What is already in place for Phase 2
+
+Done 2026-09-27, and verifiable on this box:
+
+- **`RowingKit` is its own package** (`RowingKit/`), with no dependencies at all
+  — Foundation and Observation, nothing else. The PM5 protocol, `WorkoutStore`
+  and `RowingHistory` moved out of `HubCore` and out of `Apps/Hub`, because
+  xtool refuses a package with more than one library product ("Multiple library
+  products were found") *and* because a watch target should not carry the
+  estate's API surface and an auth stack to read a stroke rate. This is the
+  piece a watch app takes whole.
+- **`.watchOS(.v11)` is declared** on both packages, so a watch target is
+  declarable. It changes nothing here, which builds for the host.
+- **The watch-to-phone wire format exists and is tested** —
+  `RowingKit/Sources/RowingKit/MirrorMessage.swift`. It carries only what
+  HealthKit's own mirroring does *not*: pace, rate, watts and the machine. Heart
+  rate and the session's statistics already reach the phone without this app
+  doing anything, so sending them again would invite two copies to disagree on
+  screen.
+
+### What the Mac session must produce
+
+Not yet written, and deliberately not until the pipeline is picked. When it is:
+
+1. An Xcode project or XcodeGen spec holding the watch app target and the Hub
+   target, because a companion relationship is declared at the project level.
+2. `HubWatch.app` built against `RowingKit` as a path dependency — no
+   `BrisalocaKit`, which is the whole reason that package exists.
+3. The watch app's `Info.plist`: `WKApplication`, and `WKBackgroundModes` with
+   `workout-processing` — which is what lets an active session keep running with
+   the wrist down. `workout-processing` is the only workout value watchOS has
+   ever had; there is no older `workout` spelling.
+4. A profile for the watch bundle id, issued under the watchOS platform.
 
 Do not start Phase 2 without picking one.
 
@@ -438,11 +509,12 @@ not a model to copy for the watch half.
    automatically contribute to both the Move and Exercise rings."* So a plainly
    saved workout does move them, and this is no longer a reason to prefer 1b
    (§3). Worth an eyeball on the first real row, but not a blocker.
-4. **Phase 2 costs the Hub its Linux build.** xtool cannot produce a watch
-   companion (§4, verified at 1.20.1), so a watch app means moving the Hub to a
-   Mac-built Xcode pipeline — including giving up its part of the unattended
-   weekly TestFlight rebuild. Unpicked, and it is a price on the whole Hub rather
-   than on rowing.
+4. ~~Phase 2 costs the Hub its Linux build~~ — **narrowed, not closed.** That
+   price is real but it is option 2's, not Phase 2's: option 1 builds only the
+   watch app on a Mac and injects it here, keeping the Hub on the Linux pipeline
+   (§4). The remaining risk is sharper and smaller — whether Apple's validation
+   accepts a hand-assembled `Watch/` bundle — and it is the one thing that
+   cannot be answered on this box.
 5. **No rower attached to kevg10, ever.** The parser is unit-testable; the radio
    is not. Every BLE change is a build-and-walk-over-to-the-rower loop. The
    openrowingmonitor PM5 emulator is the mitigation.
@@ -472,8 +544,9 @@ not a model to copy for the watch half.
    none of this needs a retrofit kit.
 2. **No heart rate in Phase 1.** HR arrives with the watch app. The phone half
    ships without it rather than buying a chest strap to bridge the gap.
-   **Re-open this one** — it was taken when Phase 2 meant only "needs the Mac",
-   and §4 has since raised that price (§3, the strap note).
+   **Still worth re-opening** — see §7.7. It was taken when Phase 2 meant only
+   "needs the Mac"; §4 has since shown Phase 2 is also *work*, and a strap is
+   neither (§3, the strap note).
 3. **Its own document.** This file, linked from `SCOPE.md`.
 4. **The Hub is the surface — no separate iOS app.** The tile is the entry point,
    matching the estate's existing rule that the Hub holds modules and standalone
@@ -483,12 +556,23 @@ not a model to copy for the watch half.
 
 **Still open:**
 
-6. **Whether Phase 2 is worth its price (§4).** It is no longer a question of
-   *how* to build a watch companion — xtool cannot, and the Hub would have to
-   move to a Mac pipeline. The live question is whether a watch app is worth
-   that, or whether a BLE strap and Phase 1 are enough. Settle this before
-   Phase 2 is scheduled at all.
-7. Whether to promote Phase 1 from 1a to 1b, and the `.iOS(.v26)` bump that
-   implies.
-8. Which household Mac, and whether Remote Login is available on it — already
-   open in `SCOPE.md` §8.5-6, and Phase 2 cannot start without it.
+6. **Which pipeline for Phase 2 (§4)** — recommended: **option 1**, a watch app
+   built on macOS CI and injected and signed by `distsign.mjs` here. Not because
+   it is cheaper but because it is *reversible*: if Apple rejects the
+   hand-assembled bundle, option 2 is the fallback and nothing is lost but the
+   attempt. Needs a decision and a reviewer before anything is built on a Mac.
+7. **Whether Phase 2 is worth doing at all** — still genuinely open, and
+   separate from *how*. A chest strap gets heart rate into Phase 1 for about
+   fifty dollars and no Mac; the watch app buys a wrist-free session, watch
+   heart rate, and the thing Kevin originally described. Test Phase 1 on the
+   rower first: if the phone-only experience turns out to be enough, this
+   question never has to be answered.
+8. Whether to promote Phase 1 from 1a to 1b, and the `.iOS(.v26)` bump that
+   implies. The main argument for 1b — that a plainly-saved workout might not
+   move the rings — turned out to be wrong (§6.3), so this is now about live
+   metrics, a Lock Screen Activity and crash recovery, not correctness.
+9. Which household Mac, and whether Remote Login is available on it — already
+   open in `SCOPE.md` §8.5-6, and Phase 2 cannot start without it. Option 1
+   narrows this: it needs a Mac for one build per watch-app change, not for
+   every Hub release, so a borrowed machine on a weekend is plausibly enough —
+   which is a much easier thing to ask a family member for.
