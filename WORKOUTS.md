@@ -14,9 +14,14 @@ app — the Hub is the surface.
 46 sibling projects — greenfield, with no entitlement plumbing, no peripheral
 I/O, no backend, and no precedent for any of it.
 
+**Kevin's priorities (2026-09-27), which outrank anything below:** the Hub stays
+as it is — no significant change, at most a new tile for health and fitness. The
+big part is **the Apple Watch app** that starts the connection to the rower for a
+workout. That settled the pipeline: the watch app is a **standalone watch app**
+that does not touch the Hub's build or bundle at all (§4, §7.6).
+
 **Where it stands, 2026-09-27.** Phase 1 is **code-complete** and Phase 2 has
-started; §3 lists what exists and §7 what is still open. Read §4 before §3 if
-the pipeline question is the one being decided. The honest summary of the gap:
+started; §3 lists what exists and §7 what is still open. The honest summary of the gap:
 **none of it has run against real hardware**, and the one build that reached
 App Store Connect's door — a local release build — was never uploaded.
 
@@ -70,17 +75,19 @@ workout to Health, which is what makes it appear in Fitness. Rower metrics ride
 along as workout metadata. **No heart rate** (decided 2026-09-27) — the iPhone
 has no HR sensor, so HR is Phase 2's business.
 
-**Phase 2 — needs the Mac.** The Hub Watch app: open it, tap Workout, connect to
-the rower. The watch holds the PM5 link and runs the workout session, so watch
-heart rate and rower data land in a single workout natively. The phone mirrors
-the session for live stats on both screens. This is Apple's own recommended
-architecture (WWDC23 *"Build a multidevice workout app"*, and WWDC25 repeats it —
-*"If you have a Watch app, be sure to start the workout there… and mirror the
-workout to the iPhone"*), and it is the version Kevin described. It is second
-because it is the version that cannot be built from this box.
+**Phase 2 — needs the Mac, and is the main event.** A watch app: open it, tap
+Workout, connect to the rower. The watch holds the PM5 link and runs the workout
+session, so watch heart rate and rower data land in a single workout natively,
+and Health carries it to Fitness on the phone with no phone code involved. It is
+a **standalone** watch app (§4), so the phone does *not* mirror the session —
+Apple's multidevice architecture (WWDC23 *"Build a multidevice workout app"*)
+needs the watch app bundled inside an iPhone app, and bundling it into the Hub
+is the change to the Hub that Kevin ruled out. It is second only because it is
+the part that cannot be built from this box.
 
-Phase 1 is not a throwaway: the PM5 client, the byte parsing and the metric
-model are all shared, and Phase 2 swaps which device owns the radio.
+Phase 1 is not a throwaway: the byte parsing, the store and the metric model
+live in `RowingKit`, which the watch app takes whole. Whether the Hub keeps its
+own phone-side rower connection once the watch exists is open (§7.10).
 
 ---
 
@@ -224,20 +231,18 @@ Two things a reader of the radio should know:
   callbacks and loses the ordering that makes a stroke's data follow the status
   it belongs to.
 
-The models went into `HubCore` alongside the parser rather than into
-`BrisalocaKit` as this document first said. `BrisalocaKit` is the estate's
-*server* contract — hostnames, credentials, what a Worker returns. The PM5 is a
-device talking over a radio, and splitting a `Data` parser from the structs it
-returns across a package boundary would have been artificial for no gain. Both
-are pure Swift with no Apple frameworks, so both are exercised by `swift test`.
+The models live in `RowingKit` with the parser, not in `BrisalocaKit` as this
+document first said. `BrisalocaKit` is the estate's *server* contract —
+hostnames, credentials, what a Worker returns. The PM5 is a device talking over
+a radio, and splitting a `Data` parser from the structs it returns across a
+package boundary would have been artificial for no gain.
 
 The parser is pure Swift over `Data`. Every characteristic in the Concept2 spec
 is a fixed byte layout, so the entire protocol — 0x0031 status, 0x0032 additional
 status, 0x0035 stroke data, 0x0039 end-of-workout summary — is unit-testable on
-kevg10 against canned byte arrays, in the same style as the existing
-`HubCoreTests`. Only the radio is untestable here. This is exactly the shape the
-repo already argues for in `Apps/Hub/Package.swift:18`: logic in the testable
-target, framework glue in the view target.
+kevg10 against canned byte arrays (`RowingKitTests`). Only the radio is
+untestable here: logic in the testable package, framework glue in the view
+target, as the rest of the Hub already does.
 
 ### Which services to read
 
@@ -256,17 +261,13 @@ that has the per-stroke data that makes an app worth having over the PM5's own
 screen. FTMS would be the fallback if the proprietary service proves awkward.
 
 Note what the spec gives for free: `0x0032` carries **heart rate**, relayed from
-whatever strap is paired to the PM5. This is the cheapest HR in the whole
-document — no extra BLE link, no extra permission, no watch app. The strap pairs
-to the rower, the PM5 puts HR in the same stream the app is already reading, and
-one strap feeds both the PM5's own screen and the app.
-
-Given §4, this deserves revisiting. HR was deferred on 2026-09-27 to Phase 2 on
-the understanding that Phase 2 was simply "the watch app". Phase 2 turns out to
-be a pipeline question, a Mac build and a hand-assembled bundle before it is a
-line of watch code — and a ~$50 strap buys the same HR for roughly a day's work
-inside Phase 1, with no Mac and nothing new to maintain. That is a decision to
-re-take, not one this document should quietly reverse.
+whatever strap is paired to the PM5. The code already uses it: `WorkoutStore`
+tracks live, average, max and recovery HR from `0x0032`/`0x0039` and saves them
+as workout metadata, so a strap paired to the PM5 puts HR into Phase 1 rows
+today. What it does not do is write HR *samples*, which is what Fitness charts —
+that would need HealthKit write access to heart rate. With the watch app now the
+main event (§7.7), the watch's own HR is the intended source and this stays a
+side benefit.
 
 ### Saving the workout
 
@@ -297,11 +298,12 @@ Apple does still say to prefer the builder ("always use the workout builder API
 to create and save a workout"), so treat that as best practice rather than as a
 gate on 1a.
 
-**1b — a live session.** `HKWorkoutSession` is **iOS 17+, not iOS 26** — it is
-`HKLiveWorkoutBuilder`, the piece that actually collects, that arrived on iOS in
-26. So the session API has been available all along; only the collection is new.
-1b buys live metrics, a Lock Screen Live Activity, and crash recovery through
-the new scene delegate.
+**1b — a live session.** Likely **iOS 26**: `HKWorkoutSession` appears on iOS
+from 17, but there it only *receives* a session mirrored from a watch. Starting
+a primary session on the iPhone, with `HKLiveWorkoutBuilder` collecting, is what
+WWDC25 #322 presents as new. *(An earlier version of this section said iOS 17+;
+check the SDK headers before relying on either.)* 1b buys live metrics, a Lock
+Screen Live Activity, and crash recovery through the new scene delegate.
 
 Build 1a first. Promote to 1b once the rowing itself is proven, and treat the
 deployment-target bump to `.iOS(.v26)` as its own small decision.
@@ -313,36 +315,31 @@ deployment-target bump to `.iOS(.v26)` as its own small decision.
 provisioning profile itself* with `plistlib` and hands it to
 `rcodesign sign --entitlements-xml-file`. So whatever the profile declares is
 what the signature carries. Enabling HealthKit on the App ID for
-`com.brisaloca.hub` in the developer portal and regenerating the profile should
-flow straight through with no repo-side signing change. This is the single
-biggest Phase 1 risk and it is a portal task, not a code one.
+`com.brisaloca.hub` (via `enable-capability.mjs`, above) and regenerating the
+profile should flow straight through with no repo-side signing change.
 
-Repo-side, the Hub's `Info.plist` currently has **no usage-description strings at
-all**. Phase 1 needs:
-
-- `NSHealthShareUsageDescription` — to read workouts back
-- `NSHealthUpdateUsageDescription` — to save the rowing workout
-- `NSBluetoothAlwaysUsageDescription` — to talk to the PM5
-
-Plus `bluetooth-central` in `UIBackgroundModes` if the connection must survive
-the phone locking mid-row — that array currently holds only `fetch`
-(`Apps/Hub/Info.plist`), so the row is a real edit rather than a formality.
+Repo-side, `Apps/Hub/Info.plist` now carries all three usage strings
+(`NSHealthShareUsageDescription`, `NSHealthUpdateUsageDescription`,
+`NSBluetoothAlwaysUsageDescription`) and `bluetooth-central` alongside `fetch`
+in `UIBackgroundModes`, so the connection survives the phone locking mid-row.
 
 ### The tile
 
-A `WorkoutTile` in `HubScreen.body` and a `WorkoutStore` in `HubCore`, following
-the existing pattern exactly: `@MainActor @Observable`, injected `tokens` and
-`transport`, a `Phase` enum, and `refresh()` wired into the three existing
-refresh paths (`.refreshable`, `.task`, `onChange(of: scenePhase)`) — see
-`HubScreen.swift:62-102`. Visual convention is `minHeight: 140`, radius 14, an SF
-Symbol at size 22, `chevron.right` top-trailing.
+A `WorkoutTile`, fourth in `HubScreen`'s grid, and a `WorkoutStore` in
+`RowingKit`. The store is `@MainActor @Observable` with a `Phase` enum like the
+others, but takes no `tokens` or `transport` — nothing about rowing talks to the
+estate. Visual convention matches the other tiles: `minHeight: 140`, radius 14,
+an SF Symbol at size 22, `chevron.right` top-trailing.
+
+**It is additive and nothing else in the Hub changed** — no existing tile or
+screen was touched. The permission prompts are lazy: Health asks when the
+workout screen first opens, Bluetooth only on "Find my rower". Someone who never
+taps the tile sees the Hub exactly as before.
 
 One genuine difference from every existing tile: **this tile is not backed by a
-Worker.** The others are reads against a service in the catalogue. This one is a
-local BLE session with HealthKit on the end. It still needs a `Phase` state
-because it can fail — no rower in range, Bluetooth off, Health permission
-refused — and the Hub's existing rule applies unchanged: render the failure, never
-a blank tile (`HubScreen.swift:6-11`).
+Worker.** It still needs a `Phase` state because it can fail — no rower in
+range, Bluetooth off, Health permission refused — and the Hub's existing rule
+applies unchanged: render the failure, never a blank tile.
 
 ### What is *not* Phase 1
 
@@ -445,14 +442,25 @@ So the realistic options, corrected:
 2. **Move the Hub to a Mac-built, Xcode-project pipeline.** Correct and boring,
    and it costs the Hub its Linux build — including its share of the weekly
    TestFlight rebuild that currently runs unattended. A price on the *whole
-   Hub*, not on rowing, and option 1 is now the one that avoids it.
+   Hub*, not on rowing, and options 1 and 4 both avoid it.
 3. **Contribute watchOS support to xtool.** Items 1 and 3 above are the two the
    maintainer has never started; worth asking him about directly, since the
    1.20.0 note shows he has thought about it. Not a plan, an option.
 
-**Recommendation: option 1**, and the reason to prefer it is not that it is
-cheaper but that it is *reversible*. If Apple rejects the hand-assembled bundle,
-the fallback is option 2 and nothing is lost but the attempt.
+4. **A standalone watch app, outside the Hub entirely.** *(Added 2026-09-27;
+   none of the options above had considered it.)* The watch app connects to the
+   rower, runs the session and saves the workout to Health, and Health carries it
+   to Fitness on the phone. It has its own bundle id and App Store record, is
+   built on a Mac or Xcode Cloud, and shares only `RowingKit` with the Hub. It
+   costs the phone's live view during a row, because mirroring launches *"your
+   companion iPhone app"* and a standalone watch app has none. It gains
+   everything Kevin asked to protect: the Hub's build, bundle, signing and
+   weekly rebuild are untouched, and the riskiest open question in option 1 —
+   whether Apple accepts a hand-assembled `Watch/` bundle — disappears.
+
+**Decided 2026-09-27: option 4** (Kevin). Options 1 and 3 remain on record as
+the way back to live stats on the phone, if that ever matters more than keeping
+the Hub unchanged. Option 2 is ruled out: it changes how the whole Hub is built.
 
 One genuinely surprising finding, recorded as **unverified**: the default xtool
 SDK install keeps all of Xcode.app, so `WatchOS27.0.sdk` is already on this disk,
@@ -477,26 +485,28 @@ Done 2026-09-27, and verifiable on this box:
   declarable. It changes nothing here, which builds for the host.
 - **The watch-to-phone wire format exists and is tested** —
   `RowingKit/Sources/RowingKit/MirrorMessage.swift`. It carries only what
-  HealthKit's own mirroring does *not*: pace, rate, watts and the machine. Heart
-  rate and the session's statistics already reach the phone without this app
-  doing anything, so sending them again would invite two copies to disagree on
-  screen.
+  HealthKit's own mirroring does *not*: pace, rate, watts and the machine.
+  **Unused under option 4**, which has no mirroring. It stays because it costs
+  nothing and is exactly what options 1 or 3 would need.
 
 ### What the Mac session must produce
 
-Not yet written, and deliberately not until the pipeline is picked. When it is:
+Not yet written. For option 4:
 
-1. An Xcode project or XcodeGen spec holding the watch app target and the Hub
-   target, because a companion relationship is declared at the project level.
-2. `HubWatch.app` built against `RowingKit` as a path dependency — no
+1. An Xcode project or XcodeGen spec holding **one watch-only app target**. There
+   is no Hub target in it and no companion relationship, so the Hub's Linux
+   pipeline never sees it.
+2. The watch app built against `RowingKit` as a path dependency — no
    `BrisalocaKit`, which is the whole reason that package exists.
-3. The watch app's `Info.plist`: `WKApplication`, and `WKBackgroundModes` with
-   `workout-processing` — which is what lets an active session keep running with
-   the wrist down. `workout-processing` is the only workout value watchOS has
-   ever had; there is no older `workout` spelling.
-4. A profile for the watch bundle id, issued under the watchOS platform.
-
-Do not start Phase 2 without picking one.
+3. The watch app's `Info.plist`: `WKApplication`, `WKWatchOnly`, and
+   `WKBackgroundModes` with `workout-processing` — which is what lets an active
+   session keep running with the wrist down. `workout-processing` is the only
+   workout value watchOS has ever had; there is no older `workout` spelling.
+   Plus `NSBluetoothAlwaysUsageDescription` and the two Health usage strings.
+4. Its own bundle id (not under `com.brisaloca.hub`), registered for watchOS,
+   with **HealthKit** enabled on it, and its own App Store Connect record.
+5. An Xcode Cloud workflow, or a documented manual archive, so later changes do
+   not each need an afternoon on the Mac.
 
 ---
 
@@ -525,19 +535,18 @@ not a model to copy for the watch half.
    retires the profile so the next build carries the entitlement. Dry-run only
    as of 2026-09-27; the write is waiting on review (§3).
 2. **The PM5 1:1 claim is from a forum, not from Concept2.** Ten minutes with the
-   actual machine settles it, and it decides whether Phase 2's watch-primary
-   design is even available.
+   actual machine settles it. Under option 4 the watch holds the link either
+   way, so it no longer decides the design — it decides whether the Hub's own
+   phone-side connection could get in the watch's way (§7.10).
 3. ~~Rings behaviour under 1a~~ — **resolved 2026-09-27.** `HKWorkout`'s own
    reference says *"In iOS. No additional work is necessary. Workout objects
    automatically contribute to both the Move and Exercise rings."* So a plainly
    saved workout does move them, and this is no longer a reason to prefer 1b
    (§3). Worth an eyeball on the first real row, but not a blocker.
-4. ~~Phase 2 costs the Hub its Linux build~~ — **narrowed, not closed.** That
-   price is real but it is option 2's, not Phase 2's: option 1 builds only the
-   watch app on a Mac and injects it here, keeping the Hub on the Linux pipeline
-   (§4). The remaining risk is sharper and smaller — whether Apple's validation
-   accepts a hand-assembled `Watch/` bundle — and it is the one thing that
-   cannot be answered on this box.
+4. ~~Phase 2 costs the Hub its Linux build~~ — **closed 2026-09-27.** Option 4
+   (§4) builds the watch app as its own app on a Mac and never touches the
+   Hub's pipeline, so neither this price nor option 1's hand-assembled-bundle
+   risk applies.
 5. **No rower attached to kevg10, ever.** The parser is unit-testable; the radio
    is not. Every BLE change is a build-and-walk-over-to-the-rower loop. The
    openrowingmonitor PM5 emulator is the mitigation.
@@ -547,8 +556,8 @@ not a model to copy for the watch half.
    *"around 10 seconds"*, the system may terminate the app to reclaim memory, and
    *"apps that spend too much time executing in the background can be throttled
    back by the system or killed."* The recovery mechanism is Core Bluetooth's
-   state preservation and restoration, which means the radio layer has to opt in
-   via `CBCentralManagerOptionRestoreIdentifierKey` and handle
+   state preservation and restoration, which `PM5Radio` already opts into via
+   `CBCentralManagerOptionRestoreIdentifierKey` and
    `centralManager(_:willRestoreState:)` — and, in a scene-based app,
    `launchOptions` is always nil so the identifier must be persisted and passed
    in on every launch rather than read back at startup. Design the session so a
@@ -566,10 +575,9 @@ not a model to copy for the watch half.
 1. **The monitor is a PM5** (Kevin, 2026-09-27) — so Bluetooth is available and
    none of this needs a retrofit kit.
 2. **No heart rate in Phase 1.** HR arrives with the watch app. The phone half
-   ships without it rather than buying a chest strap to bridge the gap.
-   **Still worth re-opening** — see §7.7. It was taken when Phase 2 meant only
-   "needs the Mac"; §4 has since shown Phase 2 is also *work*, and a strap is
-   neither (§3, the strap note).
+   ships without it rather than buying a chest strap to bridge the gap. (In
+   practice the code already records a PM5-relayed HR as metadata if a strap
+   happens to be paired to the rower — §3, the strap note.)
 3. **Its own document.** This file, linked from `SCOPE.md`.
 4. **The Hub is the surface — no separate iOS app.** The tile is the entry point,
    matching the estate's existing rule that the Hub holds modules and standalone
@@ -577,25 +585,27 @@ not a model to copy for the watch half.
 5. **Concept2's proprietary service over FTMS**, for the per-stroke metrics
    (recommendation, not yet tested).
 
+6. **The Phase 2 pipeline is option 4: a standalone watch app** (Kevin,
+   2026-09-27). The Hub stays as it is; the watch app is its own app, built on a
+   Mac, sharing only `RowingKit`. The cost, accepted: no live stats on the
+   phone during a row (§4).
+7. **Phase 2 is worth doing — it is the main part** (Kevin, 2026-09-27). The
+   watch app that starts the rower connection is what this work is for; the Hub
+   gets at most a tile.
+
 **Still open:**
 
-6. **Which pipeline for Phase 2 (§4)** — recommended: **option 1**, a watch app
-   built on macOS CI and injected and signed by `distsign.mjs` here. Not because
-   it is cheaper but because it is *reversible*: if Apple rejects the
-   hand-assembled bundle, option 2 is the fallback and nothing is lost but the
-   attempt. Needs a decision and a reviewer before anything is built on a Mac.
-7. **Whether Phase 2 is worth doing at all** — still genuinely open, and
-   separate from *how*. A chest strap gets heart rate into Phase 1 for about
-   fifty dollars and no Mac; the watch app buys a wrist-free session, watch
-   heart rate, and the thing Kevin originally described. Test Phase 1 on the
-   rower first: if the phone-only experience turns out to be enough, this
-   question never has to be answered.
 8. Whether to promote Phase 1 from 1a to 1b, and the `.iOS(.v26)` bump that
-   implies. The main argument for 1b — that a plainly-saved workout might not
-   move the rings — turned out to be wrong (§6.3), so this is now about live
-   metrics, a Lock Screen Activity and crash recovery, not correctness.
+   implies. Largely moot now that the watch is the main surface — and a
+   deployment-target bump is exactly the kind of Hub-wide change Kevin ruled out.
 9. Which household Mac, and whether Remote Login is available on it — already
-   open in `SCOPE.md` §8.5-6, and Phase 2 cannot start without it. Option 1
-   narrows this: it needs a Mac for one build per watch-app change, not for
-   every Hub release, so a borrowed machine on a weekend is plausibly enough —
-   which is a much easier thing to ask a family member for.
+   open in `SCOPE.md` §8.5-6, and Phase 2 cannot start without it. Option 4
+   needs a Mac only for the watch app — never for a Hub release — and once an
+   Xcode Cloud workflow exists, only for changes to the project itself. A
+   borrowed machine on a weekend is plausibly enough.
+10. **What the Hub tile does once the watch app exists.** Today it can connect
+    the phone to the rower and save a row itself. With the watch doing that, the
+    tile could shrink to history only (it already reads past rows from Health),
+    which also removes any chance of the phone holding the PM5's one connection
+    when the watch wants it (§6.2). Leaving it as is costs nothing until the
+    watch app ships; decide then.
