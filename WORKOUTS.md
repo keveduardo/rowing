@@ -82,7 +82,28 @@ like an obstacle and is actually the correct decomposition:
 | `Hub` (SwiftUI) | `CBCentralManager`, peripheral discovery, notifications | no, Apple-only |
 
 **Built 2026-09-27** — `Apps/Hub/Sources/HubCore/PM5.swift` and
-`Tests/HubCoreTests/PM5Tests.swift`, 16 tests, all passing.
+`Tests/HubCoreTests/PM5Tests.swift`, 16 tests, all passing;
+`Apps/Hub/Sources/Hub/PM5Radio.swift` for the `CBCentralManager`, which builds
+clean under `xtool dev build` and which `swift test` cannot see by construction.
+
+Two things a reader of the radio should know:
+
+- **`bluetooth-central` and `NSBluetoothAlwaysUsageDescription` are now in
+  `Apps/Hub/Info.plist`.** The usage string is not a nicety: iOS terminates the
+  app the instant a `CBCentralManager` is created without it, so the tile cannot
+  run without that key.
+- **CoreBluetooth is not annotated for Swift 6.** It hands out `CBCentralManager`,
+  `CBPeripheral` and `CBCharacteristic`, none of them `Sendable`, so the strict
+  region checker rejects passing them into `MainActor.assumeIsolated`. The fix
+  in `PM5Radio.swift` is to extract the `Sendable` values first wherever
+  possible (a `CBManagerState`, a UUID string, a `Data` payload) and to use one
+  narrow, documented `@unchecked Sendable` box only where a callback has to call
+  back into the peripheral. The safety argument is real rather than convenient:
+  every callback arrives on the main queue, because that is the queue the
+  manager was created with, and `assumeIsolated` asserts it. Do not "fix" this
+  by dropping `@MainActor` — that trades a sound annotation for hand-marshalled
+  callbacks and loses the ordering that makes a stroke's data follow the status
+  it belongs to.
 
 The models went into `HubCore` alongside the parser rather than into
 `BrisalocaKit` as this document first said. `BrisalocaKit` is the estate's
