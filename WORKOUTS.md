@@ -88,11 +88,25 @@ like an obstacle and is actually the correct decomposition:
 | `HubCore/PM5.swift` | The byte layouts and the enums |
 | `HubCore/WorkoutStore.swift` | One row, accumulated from the notification stream |
 | `Hub/PM5Radio.swift` | The `CBCentralManager` |
+| `Hub/HealthWriter.swift` | Saves a finished row to Health |
 | `Hub/WorkoutScreen.swift` | The Workouts tile and the screen behind it |
-| `Tests/HubCoreTests/` | 33 tests across the parser and the store |
+| `Tests/HubCoreTests/` | 35 tests across the parser and the store |
 
-`swift test --package-path Apps/Hub` — 54 tests, all passing.
+`swift test --package-path Apps/Hub` — 56 tests, all passing.
 `xtool dev build` in `Apps/Hub` — clean, no warnings.
+
+**Two `Info.plist` keys are now load-bearing**, and both are the kind that fail
+by terminating rather than by erroring: `NSBluetoothAlwaysUsageDescription`
+(a missing one kills the app the moment a `CBCentralManager` is made) and
+`NSHealthUpdateUsageDescription` (a missing one raises inside
+`requestAuthorization`, and an Objective-C exception is not something `try` can
+catch). Writing only needs the update string; `NSHealthShareUsageDescription`
+becomes necessary when the Hub starts reading workouts back.
+
+**One thing still needs a person, not a commit:** the HealthKit capability has
+to be ticked on the `com.brisaloca.hub` app record before any of this can save
+anything on a device. It is self-service — no approval, no form — but until it
+is done `HealthWriter` will report that access is off.
 
 **The parsers were cross-checked against other implementations and a hardware
 capture of a real PM5, which found two bugs worth keeping the reasoning for.**
@@ -181,12 +195,13 @@ quietly reverse.
 
 ### Saving the workout
 
-> **Where this stands:** the store now produces a finished `RowingWorkout` and
-> the screen draws it, but **nothing saves it yet.** Saving is the next piece,
-> and it is the one that needs the portal change — the HealthKit capability on
-> `com.brisaloca.hub` — so it cannot be finished from this box alone. Until
-> then a row is visible on the phone and then gone, which is worth knowing
-> before anyone tests this against the rower in earnest.
+> **Where this stands:** built, as **1a** below — `HealthWriter` saves a
+> finished row through `HKWorkoutBuilder`, and a tap on the finished card is
+> what does it. The only thing outstanding is the portal capability, which no
+> commit can do. Note that `distanceRowing` is **iOS 18+** while the Hub still
+> supports iOS 17, so on an older phone a row saves with its energy and
+> metadata but no distance sample — raising the Hub's floor for one health type
+> would cost every other tile its iOS 17 support.
 
 Two sub-options. **1a is the MVP and does not need iOS 26.**
 
