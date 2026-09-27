@@ -81,10 +81,41 @@ like an obstacle and is actually the correct decomposition:
 | `HubCore` | **The PM5 protocol parser and its models**: `Data` bytes → typed metrics | **yes — this is the point** |
 | `Hub` (SwiftUI) | `CBCentralManager`, peripheral discovery, notifications | no, Apple-only |
 
-**Built 2026-09-27** — `Apps/Hub/Sources/HubCore/PM5.swift` and
-`Tests/HubCoreTests/PM5Tests.swift`, 16 tests, all passing;
-`Apps/Hub/Sources/Hub/PM5Radio.swift` for the `CBCentralManager`, which builds
-clean under `xtool dev build` and which `swift test` cannot see by construction.
+**Built 2026-09-27**, all in the Hub:
+
+| File | What |
+|---|---|
+| `HubCore/PM5.swift` | The byte layouts and the enums |
+| `HubCore/WorkoutStore.swift` | One row, accumulated from the notification stream |
+| `Hub/PM5Radio.swift` | The `CBCentralManager` |
+| `Hub/WorkoutScreen.swift` | The Workouts tile and the screen behind it |
+| `Tests/HubCoreTests/` | 33 tests across the parser and the store |
+
+`swift test --package-path Apps/Hub` — 54 tests, all passing.
+`xtool dev build` in `Apps/Hub` — clean, no warnings.
+
+**The parsers were cross-checked against other implementations and a hardware
+capture of a real PM5, which found two bugs worth keeping the reasoning for.**
+Both were in the spec rather than in the reading of it:
+
+1. **`0x0033`'s `lastSplitTime` is hundredths, not the tenths its table says.**
+   A capture shows this characteristic carrying a raw 2492 while `0x0037`
+   carried 249 for the same split at the same 100 m mark — a ratio of exactly
+   ten, against an elapsed time of 24.89 s. The spec's own column is a known
+   defect; reading it as written reports a split longer than the workout
+   containing it. The trap inside the trap: `splitAveragePace`, three fields
+   earlier in the same payload, *is* hundredths and *is* labelled correctly.
+2. **`0x0031`'s `workoutDuration` is only a time when `durationType` is
+   `.time`.** The spec's "(if time, 0.01 sec lsb)" qualifier is load-bearing:
+   a captured status from a 100 m distance piece carries `durationType` 0x80
+   with a raw 100, which is 100 metres. Scaling it unconditionally renders a
+   distance target as a hundredth of itself.
+
+Both are now pinned by tests that assert the wrong reading *and* the right one,
+so the difference is unmissable rather than silent. A third bug was the store's
+own: it trusted whichever notification arrived last, so a status arriving
+zeroed as a piece ended would have saved half an hour of rowing as an empty
+workout. It keeps a high-water mark now.
 
 Two things a reader of the radio should know:
 
@@ -149,6 +180,13 @@ work inside Phase 1. That is a decision to re-take, not one this document should
 quietly reverse.
 
 ### Saving the workout
+
+> **Where this stands:** the store now produces a finished `RowingWorkout` and
+> the screen draws it, but **nothing saves it yet.** Saving is the next piece,
+> and it is the one that needs the portal change — the HealthKit capability on
+> `com.brisaloca.hub` — so it cannot be finished from this box alone. Until
+> then a row is visible on the phone and then gone, which is worth knowing
+> before anyone tests this against the rower in earnest.
 
 Two sub-options. **1a is the MVP and does not need iOS 26.**
 
