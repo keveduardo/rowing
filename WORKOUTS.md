@@ -78,9 +78,18 @@ like an obstacle and is actually the correct decomposition:
 
 | Lives in | What | Testable on kevg10 |
 |---|---|---|
-| `BrisalocaKit` | `Workout` models — the decoded metrics, times, summaries | yes |
-| `HubCore` | **The PM5 protocol parser**: `Data` bytes → metrics | **yes — this is the point** |
+| `HubCore` | **The PM5 protocol parser and its models**: `Data` bytes → typed metrics | **yes — this is the point** |
 | `Hub` (SwiftUI) | `CBCentralManager`, peripheral discovery, notifications | no, Apple-only |
+
+**Built 2026-09-27** — `Apps/Hub/Sources/HubCore/PM5.swift` and
+`Tests/HubCoreTests/PM5Tests.swift`, 16 tests, all passing.
+
+The models went into `HubCore` alongside the parser rather than into
+`BrisalocaKit` as this document first said. `BrisalocaKit` is the estate's
+*server* contract — hostnames, credentials, what a Worker returns. The PM5 is a
+device talking over a radio, and splitting a `Data` parser from the structs it
+returns across a package boundary would have been artificial for no gain. Both
+are pure Swift with no Apple frameworks, so both are exercised by `swift test`.
 
 The parser is pure Swift over `Data`. Every characteristic in the Concept2 spec
 is a fixed byte layout, so the entire protocol — 0x0031 status, 0x0032 additional
@@ -127,13 +136,22 @@ plus `healthStore.save()` has existed since iOS 8, so this works at the Hub's
 current `.iOS(.v17)`. No deployment-target change, no live session, no crash
 recovery. The workout appears in Fitness.
 
-**1b — a live session (iOS 26+).** `HKWorkoutSession` + `HKLiveWorkoutBuilder`,
-Apple's current recommended path. Live metrics, Live Activity on the Lock
-Screen, crash recovery via the new scene delegate, and — in Apple's words —
-*"always use the workout builder API to create and save a workout. This will
-ensure that activity rings are appropriately updated."* That last sentence is a
-caveat on 1a worth verifying on device rather than assuming: Fitness may show
-the workout without the rings behaving as they would from a session.
+**The ring question resolves in 1a's favour** *(checked against Apple's docs
+2026-09-27)*. `HKWorkout`'s own reference says: *"In iOS. No additional work is
+necessary. Workout objects automatically contribute to both the Move and
+Exercise rings. The Exercise ring increases by the workout's total duration, and
+the Move ring increases by the number of calories in the associated active
+energy burned samples."* So a plainly-saved workout does move the rings, and the
+earlier worry here — that 1a might land in Fitness without them — was wrong.
+Apple does still say to prefer the builder ("always use the workout builder API
+to create and save a workout"), so treat that as best practice rather than as a
+gate on 1a.
+
+**1b — a live session.** `HKWorkoutSession` is **iOS 17+, not iOS 26** — it is
+`HKLiveWorkoutBuilder`, the piece that actually collects, that arrived on iOS in
+26. So the session API has been available all along; only the collection is new.
+1b buys live metrics, a Lock Screen Live Activity, and crash recovery through
+the new scene delegate.
 
 Build 1a first. Promote to 1b once the rowing itself is proven, and treat the
 deployment-target bump to `.iOS(.v26)` as its own small decision.
@@ -305,10 +323,20 @@ not a model to copy for the watch half.
 5. **No rower attached to kevg10, ever.** The parser is unit-testable; the radio
    is not. Every BLE change is a build-and-walk-over-to-the-rower loop. The
    openrowingmonitor PM5 emulator is the mitigation.
-6. **Background BLE.** If the phone locks mid-row, `bluetooth-central` keeps the
-   link — but Apple is explicit that *"health data is not normally available
-   while a device is locked"* and that apps should degrade the UI rather than
-   show stale numbers.
+6. **Background BLE is a connection, not an execution window.** `bluetooth-central`
+   keeps the *link* across a locked screen, which is what a 30-minute row needs —
+   but Apple is explicit that an app *"can't run forever"*: each wake gives
+   *"around 10 seconds"*, the system may terminate the app to reclaim memory, and
+   *"apps that spend too much time executing in the background can be throttled
+   back by the system or killed."* The recovery mechanism is Core Bluetooth's
+   state preservation and restoration, which means the radio layer has to opt in
+   via `CBCentralManagerOptionRestoreIdentifierKey` and handle
+   `centralManager(_:willRestoreState:)` — and, in a scene-based app,
+   `launchOptions` is always nil so the identifier must be persisted and passed
+   in on every launch rather than read back at startup. Design the session so a
+   termination loses the *display*, never the workout. Separately, Apple notes
+   *"health data is not normally available while a device is locked"*, so the UI
+   should degrade rather than show stale numbers.
 7. **Per-stroke and force-curve data have no HealthKit home.** Custom workout
    metadata takes `NSString`/`NSNumber`/`NSDate` only, so summaries fit and
    detailed series do not. Decide where they live, or accept losing them.
