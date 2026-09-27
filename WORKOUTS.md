@@ -114,10 +114,27 @@ Hub wrote and not on rows ErgData wrote, because those carry no such metadata.
 The list names the source on any row that is not the Hub's own, so a mixed
 history says so rather than silently disagreeing with itself.
 
-**One thing still needs a person, not a commit:** the HealthKit capability has
-to be ticked on the `com.brisaloca.hub` app record before any of this can save
-anything on a device. It is self-service — no approval, no form — but until it
-is done `HealthWriter` will report that access is off.
+**The HealthKit capability is not on the app record yet, and nothing ships
+until it is.** `com.brisaloca.hub` carries `IN_APP_PURCHASE` and
+`PUSH_NOTIFICATIONS` and nothing else — checked against the live account
+2026-09-27. Without it a build runs the whole rowing half and fails the Health
+half, and reports it as "Health access is off — allow it in Settings", which
+would send anyone looking in the wrong place.
+
+This does not need the portal. `tools/ci/enable-capability.mjs` — renamed from
+`enable-push.mjs` on 2026-09-27, when HealthKit became its third capability —
+turns a capability on through the ASC API and retires the profile so the next
+build issues one carrying the entitlement:
+
+```bash
+node tools/ci/enable-capability.mjs healthkit com.brisaloca.hub --dry-run  # what it would do
+node tools/ci/enable-capability.mjs healthkit com.brisaloca.hub            # do it
+```
+
+Both paths were exercised on 2026-09-27 — HealthKit reports it *would* turn on,
+and push reports already on, which is the idempotence the script promises.
+**The write has not been run.** It changes state on the Apple account and may
+not ship ahead of review.
 
 **The parsers were cross-checked against other implementations and a hardware
 capture of a real PM5, which found two bugs worth keeping the reasoning for.**
@@ -141,6 +158,23 @@ so the difference is unmissable rather than silent. A third bug was the store's
 own: it trusted whichever notification arrived last, so a status arriving
 zeroed as a piece ended would have saved half an hour of rowing as an empty
 workout. It keeps a high-water mark now.
+
+**The release build is verified, the upload is not.** `node tools/ci/rebuild.mjs
+--app hub --no-upload --no-sign --force` was run on 2026-09-27 and produced
+`Apps/Hub/xtool/Hub.ipa` with the plist bump reverted afterwards, leaving the
+tree as it was. The ipa carries `CFBundleIdentifier com.brisaloca.hub`, build
+25, `MinimumOSVersion 17.0`, `bluetooth-central` among its background modes, all
+three usage strings, and a binary that links both `CoreBluetooth.framework` and
+`HealthKit.framework`. That is a real release build of this code.
+
+What it does *not* prove: the upload path, which has still never run for any
+app on this box, and signing, which `--no-sign` skipped. Note the unsigned ipa
+has no `DTPlatformName` — those keys are stamped by `distsign.mjs` at signing
+time, so their absence here is expected rather than a fault.
+
+`rebuild.mjs` correctly declines to rebuild the Hub on its own terms — the live
+build 24 has 88 days left against a 30-day threshold — so shipping new work
+takes `--force`, which exists for exactly this.
 
 Two things a reader of the radio should know:
 
