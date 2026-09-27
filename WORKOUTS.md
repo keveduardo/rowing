@@ -426,14 +426,18 @@ not a model to copy for the watch half.
 
 ## 6. Risks and open questions
 
-1. **HealthKit capability on the App ID** — must be enabled in the portal before
-   any of Phase 1 can be tested on a device. The signing path is verified
-   (`distsign.mjs`), the portal step is not.
+1. **HealthKit capability on the App ID — open, and the next action.** Not a
+   portal job: `tools/ci/enable-capability.mjs` does it through the ASC API and
+   retires the profile so the next build carries the entitlement. Dry-run only
+   as of 2026-09-27; the write is waiting on review (§3).
 2. **The PM5 1:1 claim is from a forum, not from Concept2.** Ten minutes with the
    actual machine settles it, and it decides whether Phase 2's watch-primary
    design is even available.
-3. **Rings behaviour under 1a** — a plain saved `HKWorkout` versus a session-built
-   one. Test the cheap path before paying for the deployment-target bump.
+3. ~~Rings behaviour under 1a~~ — **resolved 2026-09-27.** `HKWorkout`'s own
+   reference says *"In iOS. No additional work is necessary. Workout objects
+   automatically contribute to both the Move and Exercise rings."* So a plainly
+   saved workout does move them, and this is no longer a reason to prefer 1b
+   (§3). Worth an eyeball on the first real row, but not a blocker.
 4. **Phase 2 costs the Hub its Linux build.** xtool cannot produce a watch
    companion (§4, verified at 1.20.1), so a watch app means moving the Hub to a
    Mac-built Xcode pipeline — including giving up its part of the unattended
