@@ -9,10 +9,25 @@ connects to the rower; rower data and watch biometrics together; and the whole
 thing landing in the Fitness app on the phone as one workout. No separate iOS
 app — the Hub is the surface.
 
-**Where it stands:** nothing exists. Greps for `HealthKit`, `CoreBluetooth`,
-`workout`, `rowing`, `PM5` and `FTMS` return zero hits across this repo and all
-46 sibling projects. This is greenfield — no entitlement plumbing, no
-peripheral I/O, no backend, and no precedent for any of it.
+**Where this started:** nothing existed. Greps for `HealthKit`, `CoreBluetooth`,
+`workout`, `rowing`, `PM5` and `FTMS` returned zero hits across this repo and all
+46 sibling projects — greenfield, with no entitlement plumbing, no peripheral
+I/O, no backend, and no precedent for any of it.
+
+**Where it stands, 2026-09-27.** Phase 1 is **code-complete** and Phase 2 has
+started; §3 lists what exists and §7 what is still open. Read §4 before §3 if
+the pipeline question is the one being decided. The honest summary of the gap:
+**none of it has run against real hardware**, and the one build that reached
+App Store Connect's door — a local release build — was never uploaded.
+
+Three things have to be true before Phase 1 is testable on a phone, and two of
+them are not yet:
+
+| | |
+|---|---|
+| HealthKit capability on `com.brisaloca.hub` | **not enabled** — §3, and waiting on review |
+| A TestFlight build carrying this code | **not uploaded** — §3 |
+| The PM5's 1:1 Bluetooth claim | **unverified** — §1, and ten minutes with the rower |
 
 ---
 
@@ -78,10 +93,16 @@ like an obstacle and is actually the correct decomposition:
 
 | Lives in | What | Testable on kevg10 |
 |---|---|---|
-| `HubCore` | **The PM5 protocol parser and its models**: `Data` bytes → typed metrics | **yes — this is the point** |
-| `Hub` (SwiftUI) | `CBCentralManager`, peripheral discovery, notifications | no, Apple-only |
+| `RowingKit` | **The PM5 protocol, the store, the history** — `Data` in, structs out | **yes — this is the point** |
+| `HubCore` | The estate's own stores, which know nothing about rowing | yes |
+| `Hub` (SwiftUI) | `CBCentralManager`, HealthKit, the views | no, Apple-only |
 
-**Built 2026-09-27**, all in the Hub:
+The parser started in `HubCore` and moved to `RowingKit` when Phase 2 began —
+§4 has the two reasons, one of which is a trap. The decomposition itself was
+right from the start: the protocol never needed a radio, so the whole of it is
+tested here.
+
+**Built 2026-09-27** — `RowingKit` is its own package, the rest is in the Hub:
 
 | File | What |
 |---|---|
@@ -241,17 +262,19 @@ to the rower, the PM5 puts HR in the same stream the app is already reading, and
 one strap feeds both the PM5's own screen and the app.
 
 Given §4, this deserves revisiting. HR was deferred on 2026-09-27 to Phase 2 on
-the understanding that Phase 2 meant "needs the Mac". It now also means the Hub
-leaves the Linux pipeline — and a ~$50 strap buys the same HR for roughly a day's
-work inside Phase 1. That is a decision to re-take, not one this document should
-quietly reverse.
+the understanding that Phase 2 was simply "the watch app". Phase 2 turns out to
+be a pipeline question, a Mac build and a hand-assembled bundle before it is a
+line of watch code — and a ~$50 strap buys the same HR for roughly a day's work
+inside Phase 1, with no Mac and nothing new to maintain. That is a decision to
+re-take, not one this document should quietly reverse.
 
 ### Saving the workout
 
-> **Where this stands:** built, as **1a** below — `HealthWriter` saves a
+> **Where this stands:** built, as **1a** below — `HealthStore` saves a
 > finished row through `HKWorkoutBuilder`, and a tap on the finished card is
-> what does it. The only thing outstanding is the portal capability, which no
-> commit can do. Note that `distanceRowing` is **iOS 18+** while the Hub still
+> what does it. The one thing outstanding is the HealthKit capability on the app
+> record (§3): an ASC API call, not a portal job, but account state that no
+> commit can make. Note that `distanceRowing` is **iOS 18+** while the Hub still
 > supports iOS 17, so on an older phone a row saves with its energy and
 > metadata but no distance sample — raising the Hub's floor for one health type
 > would cost every other tile its iOS 17 support.
@@ -484,7 +507,7 @@ Do not start Phase 2 without picking one.
 | [JaapvanEkris/openrowingmonitor](https://github.com/JaapvanEkris/openrowingmonitor) | GPL-3.0 | The best open reference for the PM5 protocol. **It also emulates a PM5** — a fake rower to develop against with no machine in the room. GPL, so reference it, do not copy it. |
 | [ptwobrussell/Concept2-SDK](https://github.com/ptwobrussell/Concept2-SDK) | MIT | Swift PM5 BLE parsing. A lightly-used fork: CocoaPods only, no SwiftPM, and only stroke rate and distance demonstrated. Useful for byte-parsing shapes; the parser gets rewritten either way. |
 | [christophercotton/concept2_rower](https://github.com/christophercotton/concept2_rower) | MIT | A Swift 5 port of the above, as a working iOS app. |
-| [Concept2 PM5 Bluetooth spec](https://www.concept2.co.uk/files/pdf/us/monitors/PM5_BluetoothSmartInterfaceDefinition.pdf) | — | Authoritative, free, and the thing to read first. |
+| [Concept2 PM5 Bluetooth spec, Revision 1.30](https://web.archive.org/web/2024id_/https://www.concept2.co.uk/files/pdf/us/monitors/PM5_BluetoothSmartInterfaceDefinition.pdf) | — | Authoritative, free, and the thing to read first — **but read §3's two corrections with it.** ! Concept2's own URLs for this now 404 (the live one redirects to a page-not-found, and search results still point at the dead one); this Wayback copy is what the parser was transcribed from. |
 | Apple WWDC25 #322 + its demo app | — | The Phase 1 skeleton, working code. |
 | Apple *"Build a multidevice workout app"* (WWDC23) | — | The Phase 2 skeleton. |
 | [laberning/openrowingmonitor](https://laberning.github.io/openrowingmonitor/) | GPL-3.0 | The upstream Pi project; the PM5 emulator on a Raspberry Pi is the useful part. |
