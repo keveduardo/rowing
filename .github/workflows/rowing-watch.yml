@@ -5,13 +5,22 @@
 # So this app, unlike every other one here, is built by Xcode on a macOS
 # runner from Apps/Rowing/project.yml. Nothing about it touches the Hub.
 #
-# Two jobs, deliberately separate:
+# Three jobs, deliberately separate:
 #
-#   build   every push that touches the app or RowingKit. Unsigned, so it needs
-#           no secrets and proves only that the project and the Swift are sound.
-#   ship    manual only (Actions → rowing watch → Run workflow → upload). Signs
-#           with Xcode's automatic signing through an App Store Connect API
-#           key and uploads the build to TestFlight.
+#   due     weekly, on a cheap Linux runner: asks App Store Connect how long the
+#           live TestFlight build has left (tools/ci/rowing-due.mjs — the same
+#           30-day rule as brisaloca-rebuild.timer, which cannot build this
+#           app). Only `due=true` starts the Mac.
+#   build   every push that touches the app or RowingKit, and a due week.
+#           Unsigned, so it needs no secrets and proves only that the project
+#           and the Swift are sound.
+#   ship    a due week, or by hand (Actions → rowing watch → Run workflow →
+#           upload). Signs with Xcode's automatic signing through an App Store
+#           Connect API key and uploads the build to TestFlight.
+#
+# ! WITHOUT `due` THE APP LAPSES (2026-09-29). TestFlight builds live 90 days
+# and nothing else rebuilds this one: build 4 would have stopped opening
+# around 2026-12-28 with no warning.
 #
 # `ship` needs three repository secrets — ASC_KEY_ID, ASC_ISSUER_ID and
 # ASC_KEY_P8 (the .p8's contents) — from an API key minted for this workflow
@@ -25,6 +34,13 @@ on:
         description: Sign and upload to TestFlight
         type: boolean
         default: false
+      expiry_check:
+        description: Behave exactly like the weekly run (upload only if due)
+        type: boolean
+        default: false
+  schedule:
+    # Wednesdays 15:17 UTC. Weekly is plenty against a 30-day threshold.
+    - cron: '17 15 * * 3'
   push:
     paths:
       - 'Apps/Rowing/**'
@@ -35,7 +51,37 @@ permissions:
   contents: read
 
 jobs:
+  due:
+    # `expiry_check` exists so the scheduled path can be run on demand — a
+    # schedule nobody can trigger is only ever tested in the week it matters.
+    if: github.event_name == 'schedule' || inputs.expiry_check
+    runs-on: ubuntu-latest
+    outputs:
+      due: ${{ steps.ask.outputs.due }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ask App Store Connect whether the live build is near expiry
+        id: ask
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          # Where asc.mjs looks, and mode 600 because it refuses anything looser.
+          dir="$HOME/.config/appstoreconnect/private_keys"
+          mkdir -p "$dir"
+          printf '%s\n' "$ASC_KEY_P8" > "$dir/AuthKey_$ASC_KEY_ID.p8"
+          chmod 600 "$dir/AuthKey_$ASC_KEY_ID.p8"
+          node tools/ci/rowing-due.mjs
+          rm -f "$dir/AuthKey_$ASC_KEY_ID.p8"
+
   build:
+    needs: due
+    # Runs whenever `due` was skipped (a push or a hand run), and on a
+    # scheduled run only when a build is due. `!cancelled()` because a job
+    # whose dependency was skipped is otherwise skipped too.
+    if: ${{ !cancelled() && ((github.event_name != 'schedule' && !inputs.expiry_check) || needs.due.outputs.due == 'true') }}
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -71,8 +117,11 @@ jobs:
           plutil -p "$app/Watch/Rowing Watch App.app/Info.plist"
 
   ship:
-    if: github.event_name == 'workflow_dispatch' && inputs.upload
-    needs: build
+    needs: [due, build]
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' && (
+          (github.event_name == 'workflow_dispatch' && inputs.upload) ||
+          needs.due.outputs.due == 'true') }}
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
