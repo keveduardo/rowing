@@ -29,6 +29,7 @@ I/O, no backend, and no precedent for any of it.
 | Bundle ids, HealthKit on the watch one | **done 2026-09-29** — `HANDOFF.md` |
 | App record "Brisaloca Rowing" (`6817373000`) | **done 2026-09-29** |
 | Signing and upload to TestFlight | **done 2026-09-29** — build 4, internal group Household (Kevin) |
+| Kept from expiring | **weekly `due` job** in `rowing-watch.yml` — rebuilds at 30 days left |
 | The PM5's 1:1 Bluetooth claim | **unverified** — §1, and ten minutes with the rower |
 
 **None of it has run against real hardware.**
