@@ -32,6 +32,9 @@ targets:
   Rowing:
     type: application.watchapp2-container
     platform: iOS
+    # XcodeGen makes no scheme for a container on its own, and the workflow
+    # builds and archives through this one.
+    scheme: {}
     settings:
       base:
         PRODUCT_NAME: Rowing

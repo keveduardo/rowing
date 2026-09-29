@@ -52,6 +52,7 @@ jobs:
           set -euo pipefail
           brew install xcodegen
           cd Apps/Rowing && xcodegen generate
+          xcodebuild -list -project Rowing.xcodeproj
 
       - name: Build, unsigned
         # ! pipefail, or `tail` would report success for a failed build.
