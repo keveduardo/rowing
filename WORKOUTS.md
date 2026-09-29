@@ -26,7 +26,8 @@ I/O, no backend, and no precedent for any of it.
 | `RowingKit` — the PM5 protocol, the store, the history, 48 tests | **built**, and what the watch app takes whole |
 | A phone-side Workouts tile in the Hub | **built, then removed 2026-09-29** — see below |
 | The watch app, `Apps/Rowing` | **builds on the runner**, unsigned — §4, "The build" |
-| Signing and upload to TestFlight | **not run** — needs an API key, two bundle ids and an app record |
+| Bundle ids, HealthKit on the watch one | **done 2026-09-29** — `HANDOFF.md` |
+| Signing and upload to TestFlight | **not run** — needs the GitHub API key and the app record |
 | The PM5's 1:1 Bluetooth claim | **unverified** — §1, and ten minutes with the rower |
 
 **None of it has run against real hardware.**
