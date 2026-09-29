@@ -27,7 +27,8 @@ I/O, no backend, and no precedent for any of it.
 | A phone-side Workouts tile in the Hub | **built, then removed 2026-09-29** — see below |
 | The watch app, `Apps/Rowing` | **builds on the runner**, unsigned — §4, "The build" |
 | Bundle ids, HealthKit on the watch one | **done 2026-09-29** — `HANDOFF.md` |
-| Signing and upload to TestFlight | **not run** — needs the GitHub API key and the app record |
+| App record "Brisaloca Rowing" (`6817373000`) | **done 2026-09-29** |
+| Signing and upload to TestFlight | **done 2026-09-29** — build 4, internal group Household (Kevin) |
 | The PM5's 1:1 Bluetooth claim | **unverified** — §1, and ten minutes with the rower |
 
 **None of it has run against real hardware.**
