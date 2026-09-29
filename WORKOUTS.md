@@ -23,9 +23,10 @@ I/O, no backend, and no precedent for any of it.
 
 | | |
 |---|---|
-| `RowingKit` — the PM5 protocol, the store, the history, 47 tests | **built**, and what the watch app takes whole |
+| `RowingKit` — the PM5 protocol, the store, the history, 48 tests | **built**, and what the watch app takes whole |
 | A phone-side Workouts tile in the Hub | **built, then removed 2026-09-29** — see below |
-| The watch app | **not started** — §4, "The build" |
+| The watch app, `Apps/Rowing` | **builds on the runner**, unsigned — §4, "The build" |
+| Signing and upload to TestFlight | **not run** — needs an API key, two bundle ids and an app record |
 | The PM5's 1:1 Bluetooth claim | **unverified** — §1, and ten minutes with the rower |
 
 **None of it has run against real hardware.**
@@ -511,34 +512,36 @@ Done 2026-09-27, and verifiable on this box:
 ### The build — a GitHub macOS runner, no Mac in the house
 
 *(2026-09-29.)* Earlier versions of this section assumed a session at a household
-Mac. It is not needed: the repo's `app-intents` and `asset-catalogs` workflows
-already generate an Xcode project with XcodeGen on `macos-15` and build it with
-`xcodebuild`, and have passed repeatedly. The watch app follows the same
-pattern, written entirely from kevg10:
+Mac. It is not needed. The watch app is `Apps/Rowing/`, and
+`.github/workflows/rowing-watch.yml` builds it on `macos-15` from an XcodeGen
+spec, the way `app-intents.yml` already builds Pool. **First green build
+2026-09-29** (Xcode 26.3, watchOS 26.2 SDK).
 
-1. **An XcodeGen spec** (`project.yml`) holding **one watch-only app target**,
-   generated on the runner and never committed — the same as `PoolIntents`.
-   No Hub target and no companion relationship, so the Hub's pipeline never
-   sees it.
-2. **The watch app's Swift**, depending on `RowingKit` as a path package — no
-   `BrisalocaKit`, which is the whole reason that package exists — plus a
-   CoreBluetooth radio adapted from `PM5Radio` (see the top of this document).
-3. **Its `Info.plist`:** `WKApplication`, `WKWatchOnly`, and
-   `WKBackgroundModes` with `workout-processing` — which is what lets an active
-   session keep running with the wrist down. `workout-processing` is the only
-   workout value watchOS has ever had; there is no older `workout` spelling.
-   Plus `NSBluetoothAlwaysUsageDescription` and the two Health usage strings.
-4. **Its own bundle id** (not under `com.brisaloca.hub`), registered for
-   watchOS, with **HealthKit** enabled on it, and its own App Store Connect
-   record. The bundle id and capability are ASC API calls
-   (`enable-capability.mjs` already does the capability half). Creating the app
-   record itself may need the App Store Connect website — check before assuming
-   the API covers it.
-5. **Signing and upload on the runner:** `xcodebuild archive` and
-   `-exportArchive` with `-allowProvisioningUpdates` and the App Store Connect
-   API key passed as repository secrets, uploading straight to TestFlight. This
-   is the one step no existing workflow exercises — both current ones build
-   unsigned.
+- **Shape:** Apple's watch-only template — an iOS stub container
+  (`com.brisaloca.rowing`, type `watchapp2-container`, no code) holding the
+  watch app at `Rowing.app/Watch/Rowing Watch App.app`
+  (`com.brisaloca.rowing.watchkitapp`, `WKWatchOnly`, `WKApplication`,
+  `workout-processing`). XcodeGen's default placement for watch targets
+  predates single-target watch apps, so the embed is spelled out.
+- **Code:** `RowingApp`, `RowingScreen` (Row → connecting → live → saved),
+  `RowSession` (`HKWorkoutSession` + `HKLiveWorkoutBuilder`), and `PM5Radio`,
+  adapted from the Hub's with two bugs fixed — it never discovered
+  characteristics, and it scanned for the rowing service rather than the base
+  UUID the PM5 advertises. Heart rate and energy come from the watch; distance
+  from the PM5, as one `distanceRowing` sample. A session with no row is
+  discarded, not saved.
+- **Checked here before the runner:** the sources compile clean under Swift 6
+  against the iOS 26 SDK on kevg10 (the same HealthKit and CoreBluetooth API),
+  via a scratch xtool package. watchOS itself is only compiled on the runner.
+- **Two harmless warnings** on the stub (orientations, launch screen) — it is
+  never launched.
+- **Signing and upload — the `ship` job, not yet run.** Manual only. Xcode's
+  automatic signing through an App Store Connect API key minted for GitHub
+  alone (repository secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`),
+  `-exportArchive` straight to TestFlight, build number = run number. It
+  needs, first: both bundle ids registered, HealthKit on the watch one, and an
+  app record for `com.brisaloca.rowing` — which the API cannot create, so
+  that one is the website.
 
 **What building without a Mac costs:** no Simulator and no Xcode debugger. Every
 change is a CI build, a TestFlight install and a trip to the rower, the same loop
