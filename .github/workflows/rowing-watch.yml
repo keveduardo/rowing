@@ -1,0 +1,134 @@
+# Build the Rowing watch app — and, on request, sign it and upload it to
+# TestFlight. See WORKOUTS.md §4, "The build".
+#
+# ⚠️ WHY THIS RUNS ON A MAC. watchOS has no Linux path: xtool builds iOS only.
+# So this app, unlike every other one here, is built by Xcode on a macOS
+# runner from Apps/Rowing/project.yml. Nothing about it touches the Hub.
+#
+# Two jobs, deliberately separate:
+#
+#   build   every push that touches the app or RowingKit. Unsigned, so it needs
+#           no secrets and proves only that the project and the Swift are sound.
+#   ship    manual only (Actions → rowing watch → Run workflow → upload). Signs
+#           with Xcode's automatic signing through an App Store Connect API
+#           key and uploads the build to TestFlight.
+#
+# `ship` needs three repository secrets — ASC_KEY_ID, ASC_ISSUER_ID and
+# ASC_KEY_P8 (the .p8's contents) — from an API key minted for this workflow
+# alone, so it can be revoked without touching the key kevg10 uses.
+name: rowing watch
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Sign and upload to TestFlight
+        type: boolean
+        default: false
+  push:
+    paths:
+      - 'Apps/Rowing/**'
+      - 'RowingKit/**'
+      - '.github/workflows/rowing-watch.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Newest Xcode on the runner
+        run: |
+          xc=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$xc"
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i watch
+
+      - name: Generate the project
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          cd Apps/Rowing && xcodegen generate
+
+      - name: Build, unsigned
+        # ! pipefail, or `tail` would report success for a failed build.
+        run: |
+          set -euo pipefail
+          cd Apps/Rowing
+          xcodebuild build -project Rowing.xcodeproj -scheme Rowing \
+            -destination 'generic/platform=iOS' -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tail -40
+
+      - name: Show what was built
+        run: |
+          set -euo pipefail
+          app=$(find Apps/Rowing/dd/Build/Products -name Rowing.app -maxdepth 2 -type d | head -1)
+          find "$app" -maxdepth 3 | head -40
+          plutil -p "$app/Watch/Rowing Watch App.app/Info.plist"
+
+  ship:
+    if: github.event_name == 'workflow_dispatch' && inputs.upload
+    needs: build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Newest Xcode on the runner
+        run: |
+          xc=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$xc"
+          xcodebuild -version
+
+      - name: Generate the project
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          cd Apps/Rowing && xcodegen generate
+
+      - name: Archive, sign and upload
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          for v in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+            [ -n "${!v}" ] || { echo "missing repository secret $v"; exit 1; }
+          done
+          key="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$key"
+          auth=(-allowProvisioningUpdates
+                -authenticationKeyPath "$key"
+                -authenticationKeyID "$ASC_KEY_ID"
+                -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+
+          cd Apps/Rowing
+          xcodebuild archive -project Rowing.xcodeproj -scheme Rowing \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Rowing.xcarchive" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            "${auth[@]}" 2>&1 | tail -40
+
+          cat > "$RUNNER_TEMP/export.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>6DNDT6WKF8</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Rowing.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            "${auth[@]}" 2>&1 | tail -40
+          rm -f "$key"

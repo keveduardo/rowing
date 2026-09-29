@@ -244,6 +244,18 @@ public final class WorkoutStore {
         }
     }
 
+    /// End the row now, from what has been accumulated.
+    ///
+    /// For the person who stops rowing without ending the piece on the monitor.
+    /// A "Just Row" piece sends no end state and no summary until the PM5
+    /// times it out, so a watch's End button has to be able to close the row
+    /// itself. Does nothing unless a row is under way: a summary that already
+    /// arrived is better than anything this could build.
+    public func finishNow() {
+        guard phase == .rowing else { return }
+        finishWithoutSummary()
+    }
+
     /// Drop everything. Called when the rower disconnects or the screen closes,
     /// so the next row starts clean rather than inheriting the last one's peak
     /// heart rate.

@@ -119,6 +119,31 @@ struct WorkoutStoreTests {
         #expect(row.isComplete == false)
     }
 
+    @Test("`finishNow` closes a row the monitor never ended, and nothing else")
+    func finishNowClosesAnOpenRow() throws {
+        let (store, clock) = makeStore()
+        // Nothing under way: there is no row to close.
+        store.finishNow()
+        #expect(store.phase == .waiting)
+        #expect(store.latest == nil)
+
+        store.apply(try PM5Fixtures.generalStatusEvent(workoutState: 1, rowingState: 1))
+        clock.advance(300)
+        store.apply(try PM5Fixtures.generalStatusEvent(elapsed: 30_000, distance: 10_000))
+        // A "Just Row" piece: the person stands up, no end state ever arrives.
+        store.finishNow()
+
+        let row = try #require(store.latest)
+        #expect(store.phase == .finished)
+        #expect(row.duration == 300)
+        #expect(row.distance == 1_000)
+
+        // A second press, or a late summary-less close, changes nothing.
+        clock.advance(60)
+        store.finishNow()
+        #expect(store.latest == row)
+    }
+
     @Test("the notification that ends a row cannot wipe its totals")
     func endNotificationCannotWipeTotals() throws {
         let (store, _) = makeStore()

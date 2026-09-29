@@ -1,0 +1,90 @@
+# Rowing — a watch-only app for the Concept2 rower. See WORKOUTS.md §4.
+#
+# Not an xtool package like the other apps: xtool builds iOS only, and watchOS
+# has no Linux path. XcodeGen turns this into an .xcodeproj on a GitHub macOS
+# runner (.github/workflows/rowing-watch.yml) — the same way app-intents.yml
+# already builds — and the .xcodeproj is never committed.
+#
+# The shape is Apple's own "Watch-only App" template (Xcode 14+): a single
+# watchOS app target, and an iOS *stub* container that exists only because the
+# App Store ships every watch app inside an iOS bundle. The stub has no code and
+# never appears on the phone as an app.
+#
+# ! Nothing here touches the Hub. The only thing shared is RowingKit.
+name: Rowing
+options:
+  deploymentTarget:
+    watchOS: "11.0"
+    iOS: "17.0"
+packages:
+  RowingKit: { path: ../../RowingKit }
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: 6DNDT6WKF8
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    # The workflow passes the run number, so every upload is a new build.
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  # The stub. `watchapp2-container` is the product type Xcode's watch-only
+  # template gives it; its bundle id is the one the App Store record carries.
+  Rowing:
+    type: application.watchapp2-container
+    platform: iOS
+    settings:
+      base:
+        PRODUCT_NAME: Rowing
+        PRODUCT_BUNDLE_IDENTIFIER: com.brisaloca.rowing
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Rowing
+        # HTTPS-free and crypto-free — saying so keeps each upload from
+        # arriving as "Missing Compliance", as in the other apps.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+    dependencies:
+      # Embedded at Rowing.app/Watch/, which is where a watch app lives in its
+      # container. Placed explicitly rather than trusting XcodeGen's default for
+      # watch targets, which predates single-target watch apps.
+      - target: RowingWatch
+        embed: true
+        codeSign: true
+        copy:
+          destination: productsDirectory
+          subpath: $(CONTENTS_FOLDER_PATH)/Watch
+
+  RowingWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - Sources
+      - Resources
+    dependencies:
+      - package: RowingKit
+    settings:
+      base:
+        PRODUCT_NAME: Rowing Watch App
+        PRODUCT_MODULE_NAME: RowingWatch
+        PRODUCT_BUNDLE_IDENTIFIER: com.brisaloca.rowing.watchkitapp
+        CODE_SIGN_ENTITLEMENTS: Rowing.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Installed inside the container, never on its own.
+        SKIP_INSTALL: YES
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Rowing
+        INFOPLIST_KEY_WKWatchOnly: YES
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: >-
+          Rowing connects to your Concept2 rower to read your pace, stroke rate
+          and distance during a workout.
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: >-
+          Rowing saves your rows to Health so they appear in Fitness with your
+          activity rings.
+        INFOPLIST_KEY_NSHealthShareUsageDescription: >-
+          Rowing reads your heart rate during a row to show it beside your pace.
+    info:
+      # Only for what has no INFOPLIST_KEY_ build setting. `workout-processing`
+      # is what keeps an active session — and with it the rower's Bluetooth
+      # link — running with the wrist down.
+      path: Generated/RowingWatch-Info.plist
+      properties:
+        WKApplication: true
+        WKBackgroundModes: [workout-processing]
