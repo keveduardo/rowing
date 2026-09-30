@@ -153,14 +153,12 @@ enum LivePage: Hashable { case controls, metrics }
 struct LiveValues {
     var distance: Double
     var elapsed: TimeInterval
-    var strokeRate: UInt8
     var power: UInt16?
     var heartRate: Double?
 
-    init(distance: Double, elapsed: TimeInterval, strokeRate: UInt8, power: UInt16?, heartRate: Double?) {
+    init(distance: Double, elapsed: TimeInterval, power: UInt16?, heartRate: Double?) {
         self.distance = distance
         self.elapsed = elapsed
-        self.strokeRate = strokeRate
         self.power = power
         self.heartRate = heartRate
     }
@@ -171,7 +169,6 @@ struct LiveValues {
         self.init(
             distance: live.distance,
             elapsed: live.elapsed,
-            strokeRate: live.strokeRate,
             power: live.power,
             // The watch's own heart rate, falling back to a strap on the PM5.
             heartRate: session.heartRate ?? live.heartRate.map(Double.init)
@@ -179,40 +176,31 @@ struct LiveValues {
     }
 }
 
-/// Four large tiles and the heart rate: what a rower glances at mid-stroke.
+/// Four large tiles: what a rower glances at mid-stroke.
 ///
 /// (Kevin, 2026-09-29: "the four boxes make them bigger and look better. Get
-/// rid of /500 at the top.") Each tile is a colour, a number sized to fill it,
-/// and a word — the Workout app's way of making a metric findable at a glance.
+/// rid of /500 at the top" — then "swap out spm for heart rate data".) Each
+/// tile is a colour, a number sized to fill it, and a word — the Workout app's
+/// way of making a metric findable at a glance. Stroke rate is still recorded
+/// with the row; it is just not on the screen.
 struct MetricsPage: View {
     let values: LiveValues
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 4) {
-                Image(systemName: "heart.fill")
-                Text(values.heartRate.map { "\(Int($0.rounded()))" } ?? "—")
-                    .monospacedDigit()
-                Text("BPM").font(.caption2).foregroundStyle(.secondary)
-                Spacer()
+        Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+            GridRow {
+                tile("\(Int(values.distance.rounded()))", "METERS", .cyan)
+                tile(PM5.Format.elapsed(values.elapsed), "TIME", .yellow)
             }
-            .font(.headline)
-            .foregroundStyle(.red)
-            Grid(horizontalSpacing: 6, verticalSpacing: 6) {
-                GridRow {
-                    tile("\(Int(values.distance.rounded()))", "METERS", .cyan)
-                    tile(PM5.Format.elapsed(values.elapsed), "TIME", .yellow)
-                }
-                GridRow {
-                    tile(values.strokeRate > 0 ? "\(values.strokeRate)" : "—", "SPM", .green)
-                    tile(values.power.map { "\($0)" } ?? "—", "WATTS", .orange)
-                }
+            GridRow {
+                tile(values.heartRate.map { "\(Int($0.rounded()))" } ?? "—", "BPM", .red, icon: "heart.fill")
+                tile(values.power.map { "\($0)" } ?? "—", "WATTS", .orange)
             }
         }
         .padding(.horizontal, 2)
     }
 
-    private func tile(_ value: String, _ label: String, _ tint: Color) -> some View {
+    private func tile(_ value: String, _ label: String, _ tint: Color, icon: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(value)
                 .font(.system(size: 34, weight: .semibold, design: .rounded))
@@ -220,9 +208,12 @@ struct MetricsPage: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .foregroundStyle(tint)
-            Text(label)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundStyle(tint.opacity(0.75))
+            HStack(spacing: 3) {
+                if let icon { Image(systemName: icon) }
+                Text(label)
+            }
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .foregroundStyle(tint.opacity(0.75))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(8)

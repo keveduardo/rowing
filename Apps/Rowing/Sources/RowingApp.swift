@@ -60,7 +60,7 @@ struct RenderDemo: View {
             ], end: {})
             .tag(LivePage.controls)
             // The numbers from Kevin's first row, 2026-09-29.
-            MetricsPage(values: LiveValues(distance: 4058, elapsed: 1207, strokeRate: 22, power: 106, heartRate: 135))
+            MetricsPage(values: LiveValues(distance: 4058, elapsed: 1207, power: 106, heartRate: 135))
                 .tag(LivePage.metrics)
         }
         .tabViewStyle(.page)
