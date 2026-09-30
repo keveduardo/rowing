@@ -144,6 +144,43 @@ struct WorkoutStoreTests {
         #expect(store.latest == row)
     }
 
+    @Test("with no 0x0032, pace and rate come from the split and the stroke")
+    func fallbacksWithoutAdditionalStatus() throws {
+        // Kevin's PM5, 2026-09-29: distance, time and watts live; pace and
+        // stroke rate "—" for twenty minutes, because 0x0032 never arrived.
+        let (store, _) = makeStore()
+        store.apply(try PM5Fixtures.generalStatusEvent(workoutState: 1, rowingState: 1))
+
+        // A split averaging 2:05.0 — hundredths on the wire.
+        store.apply(try PM5Fixtures.additionalStatus2Event(averagePower: 106, splitPace: 12_500))
+        #expect(store.live.pace == 125)
+
+        // 0.9 s drive + 2.1 s recovery = a 3 s stroke = 20 spm.
+        store.apply(try PM5Fixtures.strokeDataEvent(strokeCount: 1, driveTime: 90, recovery: 210))
+        #expect(store.live.strokeRate == 20)
+    }
+
+    @Test("once 0x0032 arrives it wins, and the fallbacks stop")
+    func additionalStatusWins() throws {
+        let (store, _) = makeStore()
+        store.apply(try PM5Fixtures.generalStatusEvent(workoutState: 1, rowingState: 1))
+        store.apply(try PM5Fixtures.additionalStatusEvent(strokeRate: 24, heartRate: 150))
+        let pace = store.live.pace
+
+        store.apply(try PM5Fixtures.additionalStatus2Event(averagePower: 106, splitPace: 12_500))
+        store.apply(try PM5Fixtures.strokeDataEvent(strokeCount: 2, driveTime: 90, recovery: 210))
+        #expect(store.live.strokeRate == 24, "the PM5's own rate, not one worked out")
+        #expect(store.live.pace == pace, "the PM5's current pace, not the split average")
+    }
+
+    @Test("a stroke with no timing, or an impossible one, gives no rate")
+    func strokeRateBounds() throws {
+        let none = try #require(PM5.StrokeData(bytes: PM5Fixtures.strokeData()))
+        #expect(WorkoutStore.strokeRate(none) == nil)
+        let tooFast = try #require(PM5.StrokeData(bytes: PM5Fixtures.strokeData(driveTime: 30, recovery: 40)))
+        #expect(WorkoutStore.strokeRate(tooFast) == nil)
+    }
+
     @Test("the notification that ends a row cannot wipe its totals")
     func endNotificationCannotWipeTotals() throws {
         let (store, _) = makeStore()

@@ -159,6 +159,9 @@ public final class WorkoutStore {
     /// notification cannot take it away.
     private var furthestElapsed: TimeInterval = 0
     private var furthestDistance: Double = 0
+    /// Whether `0x0032` has arrived at all. Until it has, pace and stroke rate
+    /// are worked out from the characteristics that did (see `apply`).
+    private var sawAdditionalStatus = false
 
     public init(now: @escaping @Sendable () -> Date = { Date() }) {
         self.now = now
@@ -175,6 +178,16 @@ public final class WorkoutStore {
     public static func pace(elapsed: TimeInterval, distance: Double) -> TimeInterval? {
         guard elapsed > 0, distance > 0 else { return nil }
         return elapsed / (distance / 500)
+    }
+
+    /// Strokes per minute from one stroke's timing: a stroke is a drive and a
+    /// recovery, so the rate is sixty over their sum. Nil for a stroke with no
+    /// timing, and for anything outside what a person can row (a sum under a
+    /// second would claim more than 60 spm).
+    public static func strokeRate(_ stroke: PM5.StrokeData) -> UInt8? {
+        let cycle = stroke.driveTime + stroke.strokeRecoveryTime
+        guard cycle >= 1 else { return nil }
+        return UInt8(clamping: Int((60 / cycle).rounded()))
     }
 
     /// Metres per second — what HealthKit wants for a distance sample.
@@ -200,6 +213,7 @@ public final class WorkoutStore {
             advance(to: status.workoutState)
 
         case .additionalStatus(let status):
+            sawAdditionalStatus = true
             live.pace = status.currentPace
             live.strokeRate = status.strokeRate
             live.heartRate = status.heartRate
@@ -216,9 +230,23 @@ public final class WorkoutStore {
 
         case .additionalStatus2(let status):
             live.power = status.averagePower
+            // ! FALLBACKS FOR A PM5 WHOSE 0x0032 NEVER ARRIVES (2026-09-29).
+            // Kevin's first row: distance, time and watts all live, pace and
+            // stroke rate "—" for 20 minutes — both come only from 0x0032. So
+            // until it arrives, pace is this split's average (0x0033) and the
+            // rate is one stroke's drive plus recovery (0x0035). The moment a
+            // real 0x0032 lands it wins, being the PM5's own number.
+            if !sawAdditionalStatus, status.splitAveragePace > 0 {
+                live.pace = status.splitAveragePace
+            }
 
         case .strokeData(let stroke):
             live.strokeCount = stroke.strokeCount
+            if !sawAdditionalStatus, let rate = Self.strokeRate(stroke) {
+                live.strokeRate = rate
+                strokeRateTotal += Int(rate)
+                strokeRateCount += 1
+            }
 
         case .additionalStrokeData(let stroke):
             // More immediate than the running average in the other
@@ -273,6 +301,7 @@ public final class WorkoutStore {
         strokeRateCount = 0
         furthestElapsed = 0
         furthestDistance = 0
+        sawAdditionalStatus = false
     }
 
     // MARK: The state machine

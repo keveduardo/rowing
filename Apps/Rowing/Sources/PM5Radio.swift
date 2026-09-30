@@ -87,6 +87,23 @@ final class PM5Radio: NSObject {
     /// `0x003B`. Which belt the PM5 is paired to.
     private(set) var heartRateBelt: PM5.HeartRateBeltInfo?
 
+    /// What each characteristic has sent this connection: how many payloads,
+    /// how many decoded, and the last one's length. Shown on the controls page.
+    ///
+    /// ! Added 2026-09-29, after a first row where pace and stroke rate never
+    /// appeared: they come only from 0x0032, and nothing said whether it was
+    /// silent or arriving in a shape the parser refuses. A payload of a length
+    /// the spec does not give is dropped by design (the multiplexed layouts
+    /// reuse the same IDs), so the one way to learn what this PM5 sends is to
+    /// count it.
+    struct PayloadStat: Identifiable, Equatable {
+        let id: String          // "0032"
+        var seen = 0
+        var decoded = 0
+        var lastLength = 0
+    }
+    private(set) var payloadStats: [String: PayloadStat] = [:]
+
     /// The PM5's own name, `"PM5 <serial>"`. Also the serial, since the PM5
     /// exposes no other readable identifier before connecting.
     private(set) var peripheralName: String?
@@ -187,6 +204,7 @@ final class PM5Radio: NSObject {
         peripheral = nil
         characteristics = [:]
         peripheralName = nil
+        payloadStats = [:]
         phase = .idle
     }
 
@@ -465,7 +483,14 @@ extension PM5Radio: CBPeripheralDelegate {
         // Unknown characteristics, the services, and payloads of the wrong
         // length all come back nil rather than throwing: a row must not end
         // because the PM5 sent something this client does not model.
-        guard let event = PM5.decode(uuid: uuid, bytes: bytes) else { return }
+        let event = PM5.decode(uuid: uuid, bytes: bytes)
+        let key = String(uuid.uppercased().prefix(8).suffix(4))
+        var stat = payloadStats[key] ?? PayloadStat(id: key)
+        stat.seen += 1
+        if event != nil { stat.decoded += 1 }
+        stat.lastLength = bytes.count
+        payloadStats[key] = stat
+        guard let event else { return }
         apply(event)
     }
 

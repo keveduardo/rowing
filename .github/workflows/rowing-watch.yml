@@ -38,6 +38,10 @@ on:
         description: Behave exactly like the weekly run (upload only if due)
         type: boolean
         default: false
+      render:
+        description: Screenshot the live pages in a watch simulator
+        type: boolean
+        default: false
   schedule:
     # Wednesdays 15:17 UTC. Weekly is plenty against a 30-day threshold.
     - cron: '17 15 * * 3'
@@ -182,3 +186,69 @@ jobs:
             -exportPath "$RUNNER_TEMP/export" \
             "${auth[@]}" 2>&1 | tail -40
           rm -f "$key"
+
+  # Screenshots of the live pages, from the real SwiftUI in a watch simulator
+  # (Kevin, 2026-09-29: "once finished, can you show me the render"). The app's
+  # Debug build has a `-renderDemo metrics|controls` mode with fixed numbers,
+  # because a simulator has no rower and no Health. Nothing is signed or sent
+  # anywhere but this run's artifacts.
+  render:
+    if: github.event_name == 'workflow_dispatch' && inputs.render
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Newest Xcode on the runner
+        run: |
+          xc=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$xc"
+          xcodebuild -version
+
+      - name: Generate the project
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          cd Apps/Rowing && xcodegen generate
+
+      - name: Pick and boot a watch simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          # The biggest watch first — Kevin wears an Ultra.
+          udid=$(xcrun simctl list devices available --json | python3 -c '
+          import json,sys
+          devs=[d for rt,ds in json.load(sys.stdin)["devices"].items() if "watchOS" in rt for d in ds]
+          devs.sort(key=lambda d: ("Ultra" not in d["name"], d["name"]))
+          print(devs[0]["udid"]); print(devs[0]["name"], file=sys.stderr)')
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+
+      - name: Build for the simulator
+        run: |
+          set -euo pipefail
+          cd Apps/Rowing
+          xcodebuild build -project Rowing.xcodeproj -scheme RowingWatch -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tail -20
+
+      - name: Launch each page and screenshot it
+        run: |
+          set -euo pipefail
+          udid=${{ steps.sim.outputs.udid }}
+          app=$(find Apps/Rowing/dd/Build/Products -name 'Rowing Watch App.app' -type d | head -1)
+          xcrun simctl install "$udid" "$app"
+          xcrun simctl status_bar "$udid" override --time "7:40" || true
+          mkdir -p renders
+          for page in metrics controls; do
+            xcrun simctl terminate "$udid" com.brisaloca.rowing.watchkitapp || true
+            xcrun simctl launch "$udid" com.brisaloca.rowing.watchkitapp -renderDemo "$page"
+            sleep 8
+            xcrun simctl io "$udid" screenshot "renders/$page.png"
+          done
+          ls -la renders
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rowing-renders
+          path: renders/

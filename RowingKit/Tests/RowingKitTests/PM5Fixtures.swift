@@ -122,15 +122,24 @@ enum PM5Fixtures {
 
     // MARK: 0x0035 / 0x0036
 
-    static func strokeData(elapsed: Int = 0, strokeCount: Int = 0) -> Data {
+    /// `driveTime` and `recovery` in hundredths of a second, as on the wire.
+    static func strokeData(elapsed: Int = 0, strokeCount: Int = 0, driveTime: Int = 0, recovery: Int = 0) -> Data {
         data(
-            le24(elapsed) + le24(0) + [0, 0]
-                + le16(0) + le16(0) + le16(0) + le16(0) + le16(0) + le16(strokeCount)
+            le24(elapsed) + le24(0) + [0, driveTime]
+                + le16(recovery) + le16(0) + le16(0) + le16(0) + le16(0) + le16(strokeCount)
         )
     }
 
-    static func strokeDataEvent(strokeCount: Int = 0) throws -> PM5.Event {
-        .strokeData(try #require(PM5.StrokeData(bytes: strokeData(strokeCount: strokeCount))))
+    static func strokeDataEvent(strokeCount: Int = 0, driveTime: Int = 0, recovery: Int = 0) throws -> PM5.Event {
+        .strokeData(try #require(PM5.StrokeData(bytes: strokeData(
+            strokeCount: strokeCount, driveTime: driveTime, recovery: recovery
+        ))))
+    }
+
+    static func additionalStatus2Event(averagePower: Int = 0, splitPace: Int) throws -> PM5.Event {
+        .additionalStatus2(try #require(PM5.AdditionalStatus2(bytes: additionalStatus2(
+            averagePower: averagePower, splitPace: splitPace
+        ))))
     }
 
     static func additionalStrokeData(strokePower: Int = 0) -> Data {
