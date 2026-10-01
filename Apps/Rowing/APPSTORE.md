@@ -5,8 +5,15 @@ the tables and quoted blocks below was written into App Store Connect through
 the API the same day (app `6817373000`, version 1.0); this file is the record
 of what was sent and the place to edit it before sending again.
 
-Distribution: **not yet decided** — public, or Unlisted like Soccer and Español
-(request at developer.apple.com/contact/request/unlisted-app; same review).
+Distribution: **public** (Kevin, 2026-09-30) — unlike Soccer and Español,
+which are Unlisted. Available in all 175 territories, free.
+
+**Submitted 2026-10-01 01:18 UTC, build 11.** Release is MANUAL: after approval
+nothing is on the store until Release is pressed. Two things the API could not
+do were done on the website: the App Privacy answer ("Data Not Collected",
+published) and the **Regulated Medical Device declaration** (App Information →
+"No") — a Health & Fitness app cannot be added to a submission without it, and
+the refusal names it only in the 409's `meta.associatedErrors`.
 
 ---
 
