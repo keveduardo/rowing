@@ -112,7 +112,7 @@ private struct RowingLiveView: View {
 
     var body: some View {
         TabView(selection: $page) {
-            ControlsPage(stats: radio.payloadStats.values.sorted { $0.id < $1.id }, end: end)
+            ControlsPage(end: end)
                 .tag(LivePage.controls)
             Group {
                 if radio.phase.isConnected {
@@ -221,40 +221,28 @@ struct MetricsPage: View {
     }
 }
 
-/// Swiped to from the metrics: End, and what the rower has sent.
+/// Swiped to from the metrics: End.
+///
+/// ! NOTHING ELSE LIVES HERE (Kevin, 2026-09-30: "remove it in 1.0.1"). Until
+/// 1.0.1 this page also listed the rower's payload counters — "0032 0/412 ·
+/// 19 B" — which found the missing pace and stroke rate on 2026-09-29 and then
+/// shipped in 1.0, where a customer reads them as gibberish. The radio still
+/// counts (`PM5Radio.payloadStats`); a debugger can read them.
 struct ControlsPage: View {
-    let stats: [PM5Radio.PayloadStat]
     let end: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 10) {
-                Button(action: end) {
-                    VStack(spacing: 6) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 26, weight: .bold))
-                            .frame(width: 62, height: 62)
-                            .background(Color.red.opacity(0.25), in: Circle())
-                            .foregroundStyle(.red)
-                        Text("End").font(.headline)
-                    }
-                }
-                .buttonStyle(.plain)
-                if !stats.isEmpty {
-                    // A payload the parser refused shows as "0/412 · 19 B" — the
-                    // count and the length are what a fix needs to know.
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("ROWER DATA").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
-                        ForEach(stats) { s in
-                            Text("\(s.id)  \(s.decoded)/\(s.seen) · \(s.lastLength) B")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(s.decoded == s.seen ? Color.secondary : Color.orange)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+        Button(action: end) {
+            VStack(spacing: 6) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 26, weight: .bold))
+                    .frame(width: 62, height: 62)
+                    .background(Color.red.opacity(0.25), in: Circle())
+                    .foregroundStyle(.red)
+                Text("End").font(.headline)
             }
         }
+        .buttonStyle(.plain)
     }
 }
 

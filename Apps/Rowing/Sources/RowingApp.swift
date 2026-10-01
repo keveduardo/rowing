@@ -53,12 +53,8 @@ struct RenderDemo: View {
 
     var body: some View {
         TabView(selection: $page) {
-            ControlsPage(stats: [
-                .init(id: "0031", seen: 2413, decoded: 2413, lastLength: 19),
-                .init(id: "0032", seen: 2413, decoded: 0, lastLength: 19),
-                .init(id: "0033", seen: 2413, decoded: 2413, lastLength: 20),
-            ], end: {})
-            .tag(LivePage.controls)
+            ControlsPage(end: {})
+                .tag(LivePage.controls)
             // The numbers from Kevin's first row, 2026-09-29.
             MetricsPage(values: LiveValues(distance: 4058, elapsed: 1207, power: 106, heartRate: 135))
                 .tag(LivePage.metrics)

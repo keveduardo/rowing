@@ -96,6 +96,10 @@ final class PM5Radio: NSObject {
     /// the spec does not give is dropped by design (the multiplexed layouts
     /// reuse the same IDs), so the one way to learn what this PM5 sends is to
     /// count it.
+    ///
+    /// Not on screen since 1.0.1 — the End page showed these through 1.0. Kept
+    /// because the next PM5 firmware that changes a length will need them
+    /// again, and counting costs nothing.
     struct PayloadStat: Identifiable, Equatable {
         let id: String          // "0032"
         var seen = 0

@@ -23,7 +23,9 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: 6DNDT6WKF8
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "1.0"
+    # 1.0 went to App Review on 2026-10-01 as build 11. 1.0.1 takes the rower's
+    # payload counters off the End page.
+    MARKETING_VERSION: "1.0.1"
     # The workflow passes the run number, so every upload is a new build.
     CURRENT_PROJECT_VERSION: "1"
 targets:

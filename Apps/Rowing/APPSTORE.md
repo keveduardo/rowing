@@ -137,6 +137,9 @@ would be better and can replace it.
 
 - **Build 11** is the build attached. The End page in it still shows the
   "ROWER DATA" decode counters — a diagnostic readout. Harmless, but it is what
-  a customer would see.
+  a customer would see. **Removed in 1.0.1** (2026-09-30), which is built and
+  in TestFlight and is submitted once 1.0 is approved and released — a new
+  version cannot be created while 1.0 is in review. What's New for it: "The
+  End page shows only End."
 - The app always saves a **rowing** workout, so the listing claims the rower
   only — not the SkiErg or BikeErg, though they carry the same monitor.
