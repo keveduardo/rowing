@@ -5,8 +5,13 @@ the tables and quoted blocks below was written into App Store Connect through
 the API the same day (app `6817373000`, version 1.0); this file is the record
 of what was sent and the place to edit it before sending again.
 
-Distribution: **public** (Kevin, 2026-09-30) — unlike Soccer and Español,
-which are Unlisted. Available in all 175 territories, free.
+Distribution: **Unlisted, requested 2026-10-01.** It was submitted as public
+(Kevin's first answer) and he changed his mind the same night: "make sure the
+other submitted apps tonight also were requested to be unlisted". The request
+form went to Apple after the submission; once approved the app can never be
+made public again. As answered: a single household, Internally, 4 people,
+1 organization, audience "Members of one household", category Other —
+"Fitness (workout recording)", Unmanaged, 4 devices, USA. Free.
 
 **Submitted 2026-10-01 01:18 UTC, build 11.** Release is MANUAL: after approval
 nothing is on the store until Release is pressed. Two things the API could not
