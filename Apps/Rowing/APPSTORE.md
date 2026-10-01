@@ -13,6 +13,11 @@ made public again. As answered: a single household, Internally, 4 people,
 1 organization, audience "Members of one household", category Other —
 "Fitness (workout recording)", Unmanaged, 4 devices, USA. Free.
 
+**Rejected 2026-10-01 (Guideline 2.1, information needed) and resubmitted the
+same day as 1.0.1, build 16** — the version was renamed and the build swapped,
+see `Apps/REVIEW-REPLIES.md`. What follows about build 11 is the first
+submission.
+
 **Submitted 2026-10-01 01:18 UTC, build 11.** Release is MANUAL: after approval
 nothing is on the store until Release is pressed. Two things the API could not
 do were done on the website: the App Privacy answer ("Data Not Collected",
