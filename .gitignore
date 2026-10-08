@@ -1,0 +1,34 @@
+# Worker dev vars — local secrets, never committed. Added with tools/apns-spike,
+# which is the first thing in this repo to have any.
+.dev.vars
+
+# `wrangler dev` state, including the bundled copy of the worker it actually
+# runs. Output, like xtool/ below.
+.wrangler/
+
+# Swift / Xcode — generated, not authored.
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.ipa
+*.dSYM.zip
+
+# The .xcodeproj is NOT ignored on purpose: it is text, it is the thing the
+# macOS runner needs, and regenerating it requires a Mac. Committing it is what
+# keeps a Linux-only workflow honest.
+
+# xtool writes a package beside yours: `xtool/` holds the generated SwiftPM
+# package it actually builds and the `.app` it produces. All output.
+#
+# ! Added 2026-09-20, after the first build landed in a commit — a 184 KB
+# compiled arm64 binary and xtool's scaffolding, because .build/ was ignored and
+# this was not. `xtool.yml` is the source file and is unaffected by this rule.
+xtool/
+*.app/
+.bsp/
+
+# Keys bundled into an app build (Apps/*/Sources/*/Bundled/README.txt). On the
+# build box and in the TestFlight build only — never in git.
+Apps/*/Sources/*/Bundled/*-key.txt
